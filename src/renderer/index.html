@@ -24,7 +24,7 @@
         <button class="icon-btn" id="newBtn" data-tip="New edit: clear everything and start fresh (Ctrl+N). Your video files aren’t touched." aria-label="New edit"><svg data-icon="filePlus"></svg></button>
         <button class="icon-btn" id="openProjBtn" data-tip="Open a saved project (Ctrl+Shift+O)" aria-label="Open project"><svg data-icon="folder"></svg></button>
         <button class="icon-btn" id="saveProjBtn" data-tip="Save this edit as a project to finish later (Ctrl+S)" aria-label="Save project" disabled><svg data-icon="save"></svg></button>
-        <button class="icon-btn" id="modeBtn" aria-label="Switch to light mode" data-tip="Light mode"><svg data-icon="sun"></svg></button>
+        <button class="icon-btn" id="settingsBtn" aria-label="Settings" aria-haspopup="dialog" aria-expanded="false" data-tip="Settings and updates"><svg data-icon="settings"></svg></button>
         <button class="icon-btn" id="keysBtn" aria-label="Keyboard shortcuts" data-tip-html="keys"><svg data-icon="info"></svg></button>
         <span class="update-pill" id="updatePill" hidden></span>
         <button class="btn" id="addBtn"><svg data-icon="plus"></svg><span>Add clips</span></button>
@@ -120,6 +120,28 @@
   </template>
 
   <div class="tip" id="tip" role="tooltip" hidden></div>
+
+  <div class="settings" id="settings" role="dialog" aria-label="Settings" hidden>
+    <div class="set-head">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4v16M19 4v16M5 12h6m2 0h6" /></svg>
+      <div><div class="set-name">Quickcut</div><div class="set-sub" id="setVersion">Version</div></div>
+    </div>
+    <div class="set-row">
+      <div class="set-label">Updates</div>
+      <div class="set-status" id="setStatus" aria-live="polite">Quickcut checks by itself when it opens and every few hours.</div>
+      <div class="set-actions">
+        <button class="btn btn-sm" id="checkBtn"><svg data-icon="update"></svg><span>Check for updates</span></button>
+        <a class="set-link" href="https://github.com/tuhusr/quickcut/releases" target="_blank" rel="noopener">What’s new</a>
+      </div>
+    </div>
+    <div class="set-row">
+      <div class="set-label">Appearance</div>
+      <div class="seg" id="modeSeg" role="group" aria-label="Appearance">
+        <button type="button" data-mode="dark" aria-pressed="true"><svg data-icon="moon"></svg>Dark</button>
+        <button type="button" data-mode="light" aria-pressed="false"><svg data-icon="sun"></svg>Light</button>
+      </div>
+    </div>
+  </div>
 
   <dialog class="export" id="exportDlg" aria-labelledby="exportTitle"></dialog>
 

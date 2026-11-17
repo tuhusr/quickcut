@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('qc', {
   openFile: (p) => ipcRenderer.invoke('open-file', p),
   version: () => ipcRenderer.invoke('app-version'),
   updateState: () => ipcRenderer.invoke('update-state'),
+  checkUpdates: () => ipcRenderer.invoke('check-updates'),
   installUpdate: () => ipcRenderer.invoke('install-update'),
   onExportProgress: on('export-progress'),
   onProxyProgress: on('proxy-progress'),

@@ -224,17 +224,35 @@ ipcMain.handle('app-version', () => app.getVersion());
 let updateState = { state: 'idle' };
 const sendUpdate = (patch) => { updateState = { ...updateState, ...patch }; send('update', updateState); };
 
+// States: idle · checking · current (up to date) · downloading · ready (restart to finish) · error · dev.
+// Background checks run quietly; `manual` marks a check the person asked for, so only that one
+// reports "up to date" or an error back to them.
+let manual = false;
 function setupUpdater() {
   if (!autoUpdater || !app.isPackaged) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on('update-available', (i) => sendUpdate({ state: 'downloading', version: i.version, percent: 0 }));
+  autoUpdater.on('checking-for-update', () => { if (manual) sendUpdate({ state: 'checking' }); });
+  autoUpdater.on('update-not-available', () => { sendUpdate({ state: manual ? 'current' : 'idle', checkedAt: Date.now() }); manual = false; });
+  autoUpdater.on('update-available', (i) => { manual = false; sendUpdate({ state: 'downloading', version: i.version, percent: 0 }); });
   autoUpdater.on('download-progress', (p) => sendUpdate({ state: 'downloading', percent: p.percent / 100 }));
   autoUpdater.on('update-downloaded', (i) => sendUpdate({ state: 'ready', version: i.version }));
-  autoUpdater.on('error', () => sendUpdate({ state: 'idle' }));
+  autoUpdater.on('error', (e) => {
+    const offline = /ENOTFOUND|ENETUNREACH|ECONNREFUSED|ETIMEDOUT|net::/i.test(String(e && e.message));
+    sendUpdate(manual ? { state: 'error', error: offline ? 'Couldn’t reach the internet. Check your connection and try again.' : 'Couldn’t check for updates right now. Try again in a moment.' } : { state: 'idle' });
+    manual = false;
+  });
   const check = () => autoUpdater.checkForUpdates().catch(() => {});
   setTimeout(check, 4000);
   setInterval(check, 1000 * 60 * 60 * 4);
 }
+ipcMain.handle('check-updates', async () => {
+  if (!autoUpdater || !app.isPackaged) { sendUpdate({ state: 'dev' }); return updateState; }
+  if (updateState.state === 'downloading' || updateState.state === 'ready' || updateState.state === 'checking') return updateState;
+  manual = true;
+  sendUpdate({ state: 'checking', error: null });
+  autoUpdater.checkForUpdates().catch(() => {});
+  return updateState;
+});
 ipcMain.handle('update-state', () => updateState);
 ipcMain.handle('install-update', () => { if (autoUpdater) setImmediate(() => autoUpdater.quitAndInstall(true, true)); });

@@ -461,6 +461,27 @@ dialog.export::backdrop { background: #000000a6; }
 .done-name { font-weight: 600; font-size: 14px; word-break: break-all; }
 .err-box { padding: 12px; border-radius: var(--radius); border: 1px solid var(--danger); color: var(--text); font-size: 12px; white-space: pre-wrap; font-family: var(--font-ui); max-height: 140px; overflow: auto; user-select: text; }
 
+/* ---------- Settings panel ---------- */
+.icon-btn.on { background: var(--panel-2); color: var(--text); }
+.settings {
+  position: fixed; z-index: 75; width: 320px; padding: 16px; display: grid; gap: 16px;
+  background: var(--panel); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--radius-dialog);
+}
+.set-head { display: flex; align-items: center; gap: 10px; }
+.set-head .brand-mark { width: 26px; height: 26px; }
+.set-name { font: 600 14px/1.2 var(--font-num); }
+.set-sub { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.set-row { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+.set-label { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.set-status { font-size: 13px; color: var(--text); line-height: 1.45; }
+.set-status[data-state='current'] { color: var(--ok); }
+.set-status[data-state='error'] { color: var(--danger); }
+.set-actions { display: flex; align-items: center; gap: 12px; }
+.set-link { font-size: 13px; color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; }
+.set-link:hover { color: var(--text); }
+#modeSeg button { display: inline-flex; align-items: center; gap: 6px; }
+#modeSeg svg { width: 15px; height: 15px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }

@@ -1662,7 +1662,11 @@
 
   /* ---------- updates ---------- */
 
-  qc.onUpdate((u) => {
+  let lastUpdate = null;
+  function renderUpdate(u) {
+    if (!u) return;
+    lastUpdate = u;
+    // the top-bar pill: only while something is actually happening
     const pill = $('updatePill');
     if (u.state === 'downloading') { pill.hidden = false; pill.innerHTML = `<svg data-icon="update"></svg>Updating ${Math.round((u.percent || 0) * 100)}%`; }
     else if (u.state === 'ready') { pill.hidden = false; pill.innerHTML = `<svg data-icon="update"></svg>Update ready <button id="restartBtn">Restart</button>`; }
@@ -1670,7 +1674,26 @@
     paintIcons(pill);
     const r = document.getElementById('restartBtn');
     if (r) r.addEventListener('click', () => qc.installUpdate());
-  });
+    // the settings panel
+    const status = $('setStatus');
+    const btn = $('checkBtn');
+    const label = btn.querySelector('span');
+    const text = {
+      idle: 'Quickcut checks by itself when it opens and every few hours.',
+      checking: 'Checking for updates…',
+      current: 'You’re on the newest version.',
+      downloading: `Downloading version ${u.version || ''}… ${Math.round((u.percent || 0) * 100)}%`,
+      ready: `Version ${u.version || ''} is ready. Restart Quickcut to finish updating.`,
+      error: u.error || 'Couldn’t check for updates right now.',
+      dev: 'Updates only work in the installed app, not this test copy.',
+    }[u.state] || '';
+    status.textContent = text;
+    status.dataset.state = u.state;
+    label.textContent = u.state === 'ready' ? 'Restart to update' : u.state === 'error' ? 'Try again' : 'Check for updates';
+    btn.classList.toggle('btn-primary', u.state === 'ready');
+    btn.disabled = u.state === 'checking' || u.state === 'downloading';
+  }
+  qc.onUpdate(renderUpdate);
 
   /* ---------- boot ---------- */
 
@@ -1694,19 +1717,40 @@
   function setMode(mode) {
     document.documentElement.dataset.mode = mode;
     store.set('qc.mode', mode);
-    const b = $('modeBtn');
-    const light = mode === 'light';
-    b.querySelector('svg').setAttribute('data-icon', light ? 'moon' : 'sun');
-    paintIcons(b);
-    b.setAttribute('aria-label', light ? 'Switch to dark mode' : 'Switch to light mode');
-    b.dataset.tip = light ? 'Dark mode' : 'Light mode';
-    if (hintFor === b) showHint(b);
+    $('modeSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
     renderTimeline(true);
   }
-  $('modeBtn').addEventListener('click', () => setMode(document.documentElement.dataset.mode === 'light' ? 'dark' : 'light'));
+  $('modeSeg').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (b) setMode(b.dataset.mode); });
   setMode(store.get('qc.mode', 'dark'));
 
+  /* ---------- settings panel (gear in the top bar) ---------- */
+
+  const settings = $('settings');
+  const settingsBtn = $('settingsBtn');
+  function openSettings(open) {
+    settings.hidden = !open;
+    settingsBtn.setAttribute('aria-expanded', String(open));
+    settingsBtn.classList.toggle('on', open);
+    if (open) {
+      const r = settingsBtn.getBoundingClientRect();
+      settings.style.top = `${r.bottom + 8}px`;
+      settings.style.right = `${Math.max(8, window.innerWidth - r.right)}px`;
+      hideHint();
+      qc.updateState().then(renderUpdate);
+    }
+  }
+  settingsBtn.addEventListener('click', (e) => { e.stopPropagation(); openSettings(settings.hidden); });
+  document.addEventListener('pointerdown', (e) => { if (!settings.hidden && !settings.contains(e.target) && !settingsBtn.contains(e.target)) openSettings(false); });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !settings.hidden) { openSettings(false); settingsBtn.focus(); } }, true);
+  qc.version().then((v) => { $('setVersion').textContent = `Version ${v}`; });
+  $('checkBtn').addEventListener('click', () => {
+    const u = lastUpdate;
+    if (u && u.state === 'ready') { qc.installUpdate(); return; }
+    qc.checkUpdates().then(renderUpdate);
+  });
+
   window.__qcSetTheme = setMode;
+  window.__qcRenderUpdate = renderUpdate;
   window.__qcImport = importPaths;
   window.__qcSeek = seekTo;
   window.__qcMediaThumbRate = (id) => media.get(id).thumbRate;
