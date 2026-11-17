@@ -1,0 +1,36 @@
+{
+  "buildPath": "code",
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "clipped-overflow-container",
+        "value": "*",
+        "files": [
+          "src/renderer/index.html"
+        ],
+        "createdAt": "2026-11-17T13:41:38.218Z",
+        "reason": "agent: body overflow:hidden is the fixed app shell; positioned children (toast, overlay) are position:fixed inside the viewport, nothing escapes"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "src/renderer/index.html"
+        ],
+        "createdAt": "2026-11-17T13:41:38.389Z",
+        "reason": "agent: timeline-scroll is the track ground; ruler sits flush at top by design and clips are inset 18px"
+      },
+      {
+        "rule": "repeating-stripes-gradient",
+        "value": "*",
+        "files": [
+          "src/renderer/styles.css"
+        ],
+        "createdAt": "2026-11-17T13:41:44.100Z",
+        "reason": "agent: the repeating gradient draws the timeline's time grid at the ruler's major-tick spacing; functional, part of the Darkroom direction"
+      }
+    ]
+  }
+}

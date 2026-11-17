@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data: qc-media:; media-src 'self' file: qc-media: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'" />
+  <title>Quickcut</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app" id="app" data-empty="true">
+    <header class="topbar">
+      <div class="brand" aria-label="Quickcut">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4v16M19 4v16M5 12h6m2 0h6" /></svg>
+        <span>Quickcut</span>
+      </div>
+      <label class="edit-name">
+        <span class="sr-only">Edit name</span>
+        <input id="editName" value="Untitled edit" spellcheck="false" autocomplete="off" />
+      </label>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="openProjBtn" title="Open project (Ctrl+Shift+O)" aria-label="Open project"><svg data-icon="folder"></svg></button>
+        <button class="icon-btn" id="saveProjBtn" title="Save project (Ctrl+S)" aria-label="Save project" disabled><svg data-icon="save"></svg></button>
+        <span class="divider" aria-hidden="true"></span>
+        <button class="icon-btn" id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled><svg data-icon="undo"></svg></button>
+        <button class="icon-btn" id="redoBtn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled><svg data-icon="redo"></svg></button>
+        <span class="update-pill" id="updatePill" hidden></span>
+        <button class="btn btn-primary" id="exportBtn" disabled><svg data-icon="export"></svg><span>Export</span></button>
+      </div>
+    </header>
+
+    <aside class="bin" aria-label="Clips">
+      <div class="panel-head">
+        <h2>Clips <span class="count" id="binCount"></span></h2>
+        <button class="btn btn-quiet btn-sm" id="addBtn"><svg data-icon="plus"></svg><span>Add</span></button>
+      </div>
+      <div class="bin-list" id="binList" role="list"></div>
+      <button class="bin-drop" id="binDrop" type="button">
+        <svg data-icon="film"></svg>
+        <strong>Drop videos here</strong>
+        <span>or click to choose files</span>
+      </button>
+    </aside>
+
+    <main class="stage">
+      <div class="viewer" id="viewer">
+        <div class="frame" id="frame"><video id="video" preload="auto" playsinline></video></div>
+        <div class="viewer-empty" id="viewerEmpty">
+          <div class="drop-card">
+            <svg data-icon="film"></svg>
+            <h1>Drop clips to start</h1>
+            <p>MP4, MOV, MKV, WebM, AVI and more. Your original files are never changed.</p>
+            <div class="drop-actions">
+              <button class="btn btn-primary" id="chooseBtn"><svg data-icon="plus"></svg><span>Choose files</span></button>
+              <button class="btn" id="restoreBtn" hidden><svg data-icon="undo"></svg><span>Restore last edit</span></button>
+            </div>
+          </div>
+        </div>
+        <div class="viewer-note" id="viewerNote" hidden></div>
+      </div>
+      <div class="transport">
+        <div class="transport-buttons">
+          <button class="icon-btn" id="toStartBtn" title="Go to start (Home)" aria-label="Go to start"><svg data-icon="skipBack"></svg></button>
+          <button class="icon-btn" id="prevFrameBtn" title="Back one frame (Left)" aria-label="Back one frame"><svg data-icon="stepBack"></svg></button>
+          <button class="icon-btn play" id="playBtn" title="Play (Space)" aria-label="Play"><svg data-icon="play"></svg></button>
+          <button class="icon-btn" id="nextFrameBtn" title="Forward one frame (Right)" aria-label="Forward one frame"><svg data-icon="stepFwd"></svg></button>
+          <button class="icon-btn" id="toEndBtn" title="Go to end (End)" aria-label="Go to end"><svg data-icon="skipFwd"></svg></button>
+        </div>
+        <div class="timecode" aria-live="off">
+          <span class="tc" id="tcNow"></span>
+          <span class="tc-sep">/</span>
+          <span class="tc tc-total" id="tcTotal"></span>
+        </div>
+        <div class="transport-tools">
+          <label class="shape" title="Shape of the finished video">
+            <svg data-icon="crop"></svg>
+            <span class="sr-only">Shape</span>
+            <select id="shapeSel">
+              <option value="orig">Original shape</option>
+              <option value="16:9">16:9 Landscape</option>
+              <option value="9:16">9:16 Vertical</option>
+              <option value="1:1">1:1 Square</option>
+              <option value="4:5">4:5 Portrait</option>
+            </select>
+          </label>
+          <button class="toggle" id="fitBtn2" aria-pressed="false" title="Fill the frame by cropping, instead of showing black bars" hidden><span>Fill</span></button>
+          <button class="btn btn-quiet btn-sm" id="splitBtn" title="Split at playhead (S)"><svg data-icon="scissors"></svg><span>Split</span></button>
+          <button class="btn btn-quiet btn-sm" id="deleteBtn" title="Remove clip (Delete)"><svg data-icon="trash"></svg><span>Remove</span></button>
+        </div>
+      </div>
+    </main>
+
+    <aside class="inspector" aria-label="Details" id="inspector"></aside>
+
+    <section class="timeline" aria-label="Timeline">
+      <div class="timeline-bar">
+        <h2>Timeline</h2>
+        <span class="timeline-meta" id="timelineMeta"></span>
+        <div class="timeline-tools">
+          <button class="toggle" id="snapBtn" aria-pressed="true" title="Snap edges to the playhead and other clips"><svg data-icon="magnet"></svg><span>Snap</span></button>
+          <div class="zoom">
+            <button class="icon-btn sm" id="zoomOut" aria-label="Zoom out" title="Zoom out (-)"><svg data-icon="minus"></svg></button>
+            <input type="range" id="zoomRange" min="0" max="100" value="40" aria-label="Zoom" />
+            <button class="icon-btn sm" id="zoomIn" aria-label="Zoom in" title="Zoom in (+)"><svg data-icon="plus"></svg></button>
+            <button class="btn btn-quiet btn-sm" id="fitBtn" title="Fit the whole edit">Fit</button>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-scroll" id="tlScroll">
+        <div class="timeline-inner" id="tlInner">
+          <div class="ruler" id="ruler"></div>
+          <div class="track" id="track">
+            <div class="track-empty" id="trackEmpty">Clips you add line up here. Drag to reorder, pull the edges to trim.</div>
+          </div>
+          <div class="insert-mark" id="insertMark" hidden></div>
+          <div class="playhead" id="playhead"><span class="playhead-cap"></span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="drop-overlay" id="dropOverlay" hidden>
+    <div><svg data-icon="film"></svg><strong>Drop to add clips</strong></div>
+  </div>
+
+  <dialog class="export" id="exportDlg" aria-labelledby="exportTitle"></dialog>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <script src="icons.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
