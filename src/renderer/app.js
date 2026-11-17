@@ -70,7 +70,6 @@
     playhead: 0,
     playing: false,
     zoom: 60,             // px per second
-    snap: store.get('qc.snap', true),
     shape: 'orig',
     fit: 'fit',
   };
@@ -126,9 +125,10 @@
     if (!paths || !paths.length) return;
     const proj = paths.find((p) => /\.qcut$/i.test(p));
     if (proj) { openProject(proj); return; }
+    toast(paths.length === 1 ? 'Adding clip…' : `Adding ${paths.length} clips…`, { ms: 60000 });
     const jobs = paths.map((p) => loadMedia(p));
     const added = (await Promise.all(jobs)).filter(Boolean);
-    if (!added.length) { renderBin(); return; }
+    if (!added.length) return;
     commit();
     const wasEmpty = !S.clips.length;
     added.forEach((m) => S.clips.push({ id: uid(), mediaId: m.id, in: 0, out: m.info.duration, volume: 1, muted: false, fadeIn: 0, fadeOut: 0 }));
@@ -143,13 +143,11 @@
     return (async () => {
       const m = { id, path: p, name: p.split(/[\\/]/).pop(), info: null, thumbs: [], playPath: p, status: 'probing', addedAt: Date.now() };
       media.set(id, m);
-      renderBin();
       try {
         m.info = await qc.probe(p);
       } catch (e) {
         m.status = 'error';
         m.error = (await qc.exists(p)) ? 'Can’t read this file' : 'File missing';
-        renderBin();
         if (!quiet) toast(`${m.name}: this file isn’t a video or audio file Quickcut can read.`, { error: true });
         return null;
       }
@@ -162,7 +160,6 @@
         qc.thumbs(p, i.duration, Math.max(8, Math.min(60, Math.round(i.duration * 2)))).then((t) => {
           m.thumbs = t;
           m.addedAt = Date.now();
-          renderBin();
           renderTimeline(true);
         }).catch(() => {});
       }
@@ -398,9 +395,8 @@
   function render() {
     app.dataset.empty = S.clips.length || media.size ? 'false' : 'true';
     $('trackEmpty').hidden = S.clips.length > 0;
-    renderBin();
     renderTimeline();
-    renderInspector();
+    renderClipBar();
     renderPlayhead();
     renderPlayState();
     $('undoBtn').disabled = !past.length;
@@ -408,8 +404,6 @@
     $('exportBtn').disabled = !S.clips.length;
     $('saveProjBtn').disabled = !S.clips.length;
     renderShape();
-    $('splitBtn').disabled = !S.clips.length;
-    $('deleteBtn').disabled = !S.selected;
   }
 
   function renderPlayState() {
@@ -418,27 +412,7 @@
     svg.setAttribute('data-icon', S.playing ? 'pause' : 'play');
     paintIcons(b);
     b.setAttribute('aria-label', S.playing ? 'Pause' : 'Play');
-    b.title = S.playing ? 'Pause (Space)' : 'Play (Space)';
-  }
-
-  function renderBin() {
-    const list = $('binList');
-    const items = [...media.values()];
-    $('binCount').textContent = items.length ? items.length : '';
-    $('binDrop').classList.toggle('compact', items.length > 0);
-    list.innerHTML = items.map((m) => {
-      const i = m.info;
-      const thumb = m.thumbs[Math.floor(m.thumbs.length / 3)] || '';
-      const sub = m.status === 'error' ? m.error : m.status === 'probing' ? 'Reading…' :
-        [i.hasVideo ? `${i.width}×${i.height}` : 'Audio', i.hasVideo && i.fps ? `${Math.round(i.fps * 100) / 100} fps` : ''].filter(Boolean).join(' · ');
-      const fresh = Date.now() - m.addedAt < 1500 && m.thumbs.length ? ' develop' : '';
-      return `<div class="bin-item${m.status !== 'ready' ? ' loading' : ''}${fresh}" role="listitem" draggable="${m.status === 'ready'}" data-media="${m.id}" title="${esc(m.path)}">
-        <div class="bin-thumb" style="${thumb ? `background-image:url('${thumb}')` : ''}">${!thumb && i && !i.hasVideo ? '<svg data-icon="audio"></svg>' : ''}${i ? `<span class="dur">${fmtShort(i.duration)}</span>` : ''}</div>
-        <div class="bin-meta"><div class="bin-name">${esc(m.name)}</div><div class="bin-sub${m.status === 'error' ? ' err' : ''}">${esc(sub)}</div></div>
-        ${m.status === 'ready' ? `<button class="icon-btn sm bin-add" data-add="${m.id}" aria-label="Add ${esc(m.name)} to the end of the timeline" title="Add to timeline"><svg data-icon="plus"></svg></button>` : '<span></span>'}
-      </div>`;
-    }).join('');
-    paintIcons(list);
+    b.dataset.tip = S.playing ? 'Pause (Space)' : 'Play (Space)';
   }
 
   const clipEls = new Map();
@@ -471,7 +445,6 @@
       el.classList.toggle('develop', m.thumbs.length > 0 && Date.now() - m.addedAt < 1700);
       el.querySelector('.nm').textContent = m.name.replace(/\.[^.]+$/, '');
       el.querySelector('.du').textContent = fmtShort(len(c));
-      el.title = `${m.name} · ${fmtTC(c.in)} → ${fmtTC(c.out)}`;
       let mute = el.querySelector('.clip-muted');
       if (c.muted && !mute) { el.insertAdjacentHTML('beforeend', '<span class="clip-muted" title="Muted"><svg data-icon="volumeOff"></svg></span>'); paintIcons(el); }
       if (!c.muted && mute) mute.remove();
@@ -488,7 +461,8 @@
     });
     clipEls.forEach((el, id) => { if (!seen.has(id)) { el.remove(); clipEls.delete(id); } });
     renderRuler();
-    $('timelineMeta').textContent = S.clips.length ? `${S.clips.length} clip${S.clips.length > 1 ? 's' : ''} · ${fmtTC(T)}` : '';
+    const meta = document.getElementById('cbMeta');
+    if (meta) meta.textContent = `${S.clips.length} clip${S.clips.length > 1 ? 's' : ''} · ${fmtTC(T)}`;
   }
 
   function drawFrames(el, c, m, w, force) {
@@ -626,73 +600,57 @@
 
   /* ---------- inspector ---------- */
 
-  const fadeOpts = (v) => [[0, 'None'], [0.25, '0.25 s'], [0.5, '0.5 s'], [1, '1 s'], [2, '2 s'], [3, '3 s']]
+  const fadeOpts = (v) => [[0, 'Off'], [0.25, '¼ s'], [0.5, '½ s'], [1, '1 s'], [2, '2 s'], [3, '3 s']]
     .map(([n, l]) => `<option value="${n}"${Math.abs((v || 0) - n) < 0.001 ? ' selected' : ''}>${l}</option>`).join('');
 
-  function renderInspector() {
-    const box = $('inspector');
-    const keys = `<div class="insp-section"><h2 style="margin-bottom:12px">Shortcuts</h2><div class="keys">
-      <kbd>Space</kbd><span>Play / pause</span>
-      <kbd>S</kbd><span>Split at playhead</span>
-      <kbd>I</kbd><span>Trim start to playhead</span>
-      <kbd>O</kbd><span>Trim end to playhead</span>
-      <kbd>Del</kbd><span>Remove clip</span>
-      <kbd>← →</kbd><span>One frame (Shift: 1 s)</span>
-      <kbd>Ctrl Z</kbd><span>Undo</span>
-      <kbd>Ctrl S</kbd><span>Save project</span>
-      <kbd>Ctrl E</kbd><span>Export</span></div></div>`;
+  const info = (text) => `<span class="info" tabindex="0" role="note" aria-label="${esc(text)}" data-tip="${esc(text)}"><svg data-icon="info"></svg></span>`;
+  const zoomTools = `<div class="zoom">
+      <button class="icon-btn sm" data-z="out" aria-label="Zoom out" data-tip="Zoom out (−, or Ctrl + scroll)"><svg data-icon="minus"></svg></button>
+      <button class="icon-btn sm" data-z="in" aria-label="Zoom in" data-tip="Zoom in (+, or Ctrl + scroll)"><svg data-icon="plus"></svg></button>
+      <button class="btn btn-quiet btn-sm" data-z="fit" data-tip="Show the whole edit">Fit</button>
+    </div>`;
+
+  // One bar above the timeline: the selected clip's controls, or the edit's summary.
+  function renderClipBar() {
+    const box = $('clipBar');
+    if (box.contains(document.activeElement) && document.activeElement.matches('input[type=text]')) return;
     const c = selectedClip();
+    const splitBtn = `<button class="btn btn-quiet btn-sm" id="fSplit" data-tip="Cut the clip in two at the playhead (S)"><svg data-icon="scissors"></svg><span>Split</span></button>`;
     if (!c) {
-      if (!S.clips.length) {
-        box.innerHTML = `<div class="insp-section"><h2 style="margin-bottom:10px">How it works</h2><p class="insp-lead">Drop clips in. They line up on the timeline in the order you add them. Drag a clip to move it, pull its edges to trim, press S to cut it in two. Export saves one new video; your originals stay untouched.</p></div>${keys}`;
-      } else {
-        const first = media.get(S.clips[0].mediaId).info;
-        box.innerHTML = `<div class="insp-section"><div class="insp-title">${esc($('editName').value || 'Untitled edit')}</div><div class="insp-sub">Click a clip to trim or adjust it.</div></div>
-          <div class="insp-section"><dl class="stat-grid">
-            <dt>Length</dt><dd>${fmtTC(total())}</dd>
-            <dt>Clips</dt><dd>${S.clips.length}</dd>
-            ${first.hasVideo ? `<dt>Size</dt><dd>${first.width}×${first.height}</dd><dt>Frame rate</dt><dd>${Math.round(first.fps * 100) / 100}</dd>` : ''}
-          </dl></div>${keys}`;
-      }
-      return;
-    }
-    const m = media.get(c.mediaId);
-    const i = m.info;
-    const vol = Math.round(c.volume * 100);
-    box.innerHTML = `
-      <div class="insp-section"><div class="insp-title">${esc(m.name)}</div><div class="insp-sub" title="${esc(m.path)}">${esc(m.path)}</div></div>
-      <div class="insp-section" style="display:grid;gap:12px">
-        <div class="field-row">
-          <label class="field"><span>Start</span><input type="text" id="fIn" value="${fmtTC(c.in)}" spellcheck="false"></label>
-          <label class="field"><span>End</span><input type="text" id="fOut" value="${fmtTC(c.out)}" spellcheck="false"></label>
+      box.innerHTML = `<span class="cb-meta" id="cbMeta">${S.clips.length} clip${S.clips.length > 1 ? 's' : ''} · ${fmtTC(total())}</span>
+        <span class="cb-hint">Click a clip to trim or adjust it</span>
+        <div class="cb-end">${splitBtn}${zoomTools}</div>`;
+    } else {
+      const m = media.get(c.mediaId);
+      const i = m.info;
+      const vol = Math.round(c.volume * 100);
+      box.innerHTML = `
+        <div class="cb-name" title="${esc(m.path)}">${esc(m.name.replace(/\.[^.]+$/, ''))}</div>
+        <div class="cb-group">
+          <label class="cb-field"><span>Start</span><input type="text" id="fIn" value="${fmtTC(c.in)}" spellcheck="false" aria-label="Start time"></label>
+          <label class="cb-field"><span>End</span><input type="text" id="fOut" value="${fmtTC(c.out)}" spellcheck="false" aria-label="End time"></label>
+          ${info('Where this clip starts and ends inside its original file. Type a time, drag the clip’s edges, or press I / O to use the playhead.')}
         </div>
-        <dl class="stat-grid"><dt>Length</dt><dd>${fmtTC(len(c))}</dd><dt>Original</dt><dd>${fmtTC(i.duration)}</dd></dl>
-      </div>
-      <div class="insp-section" style="display:grid;gap:10px">
-        <div class="group-label" style="margin:0">Volume</div>
-        <div class="vol">
-          <button class="icon-btn sm" id="fMute" aria-pressed="${c.muted}" aria-label="${c.muted ? 'Unmute' : 'Mute'}" title="${c.muted ? 'Unmute' : 'Mute'}" ${i.hasAudio ? '' : 'disabled'}><svg data-icon="${c.muted || !i.hasAudio ? 'volumeOff' : 'volume'}"></svg></button>
+        <div class="cb-group">
+          <button class="icon-btn sm" id="fMute" aria-pressed="${c.muted}" aria-label="${c.muted ? 'Unmute' : 'Mute'}" data-tip="${!i.hasAudio ? 'This clip has no sound' : c.muted ? 'Unmute' : 'Mute'}" ${i.hasAudio ? '' : 'disabled'}><svg data-icon="${c.muted || !i.hasAudio ? 'volumeOff' : 'volume'}"></svg></button>
           <input type="range" id="fVol" min="0" max="200" step="1" value="${vol}" style="--fill:${vol / 2}%" aria-label="Volume" ${i.hasAudio && !c.muted ? '' : 'disabled'}>
-          <output id="fVolOut">${i.hasAudio ? `${vol}%` : 'None'}</output>
+          <output id="fVolOut">${i.hasAudio ? `${vol}%` : '—'}</output>
         </div>
-      </div>
-      <div class="insp-section" style="display:grid;gap:10px">
-        <div class="group-label" style="margin:0">Fade</div>
-        <div class="field-row fades">
-          <label class="field"><span>In (from black)</span><select id="fFadeIn">${fadeOpts(c.fadeIn)}</select></label>
-          <label class="field"><span>Out (to black)</span><select id="fFadeOut">${fadeOpts(c.fadeOut)}</select></label>
+        <div class="cb-group">
+          <label class="cb-field"><span>Fade in</span><select id="fFadeIn">${fadeOpts(c.fadeIn)}</select></label>
+          <label class="cb-field"><span>out</span><select id="fFadeOut">${fadeOpts(c.fadeOut)}</select></label>
+          ${info('Fades the picture and sound in from black at the start, or out to black at the end.')}
         </div>
-      </div>
-      <div class="insp-section insp-actions">
-        <button class="btn btn-quiet" id="fSplit"><svg data-icon="scissors"></svg><span>Split at playhead</span></button>
-        <button class="btn btn-quiet" id="fRemove"><svg data-icon="trash"></svg><span>Remove from timeline</span></button>
-      </div>
-      <div class="insp-section"><dl class="stat-grid">
-        ${i.hasVideo ? `<dt>Size</dt><dd>${i.width}×${i.height}</dd><dt>Frame rate</dt><dd>${Math.round(i.fps * 100) / 100}</dd><dt>Video</dt><dd>${esc((i.vcodec || '').toUpperCase())}</dd>` : ''}
-        <dt>Audio</dt><dd>${i.hasAudio ? esc((i.acodec || '').toUpperCase()) : 'None'}</dd>
-        <dt>File</dt><dd>${fmtBytes(i.size)}</dd>
-      </dl></div>`;
+        <div class="cb-end">
+          ${splitBtn}
+          <button class="btn btn-quiet btn-sm" id="fRemove" data-tip="Take this clip out of the edit (Delete)"><svg data-icon="trash"></svg><span>Remove</span></button>
+          ${zoomTools}
+        </div>`;
+    }
     paintIcons(box);
+    $('fSplit').addEventListener('click', split);
+    if (!c) return;
+    const i = media.get(c.mediaId).info;
 
     const bindTC = (id, which) => {
       const inp = $(id);
@@ -702,10 +660,11 @@
         if (!ok) { inp.classList.add('invalid'); toast(which === 'in' ? `Start must be between 00:00.00 and ${fmtTC(c.out - MIN_LEN)}.` : `End must be between ${fmtTC(c.in + MIN_LEN)} and ${fmtTC(i.duration)}.`, { error: true }); return; }
         commit();
         c[which] = Math.min(v, i.duration);
+        inp.blur();
         render();
         seekTo(starts()[S.clips.indexOf(c)]);
       };
-      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); inp.blur(); } if (e.key === 'Escape') { inp.value = fmtTC(c[which]); inp.blur(); } });
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } if (e.key === 'Escape') { inp.value = fmtTC(c[which]); inp.blur(); } });
       inp.addEventListener('change', apply);
       inp.addEventListener('input', () => inp.classList.remove('invalid'));
     };
@@ -729,26 +688,26 @@
     });
     bindFade('fFadeIn', 'fadeIn');
     bindFade('fFadeOut', 'fadeOut');
-    $('fSplit').addEventListener('click', split);
     $('fRemove').addEventListener('click', removeSelected);
   }
 
-  $('editName').addEventListener('input', () => { if (!S.selected) renderInspector(); });
+  $('clipBar').addEventListener('click', (e) => {
+    const z = e.target.closest('[data-z]');
+    if (!z) return;
+    if (z.dataset.z === 'in') setZoom(S.zoom * 1.5);
+    else if (z.dataset.z === 'out') setZoom(S.zoom / 1.5);
+    else fitZoom();
+  });
 
   /* ---------- zoom ---------- */
 
   const ZMIN = 2;
   const ZMAX = 500;
-  const zoomToRange = (z) => (Math.log(z / ZMIN) / Math.log(ZMAX / ZMIN)) * 100;
-  const rangeToZoom = (v) => ZMIN * Math.pow(ZMAX / ZMIN, v / 100);
   function setZoom(z, anchorX) {
     const scroll = $('tlScroll');
     const ax = anchorX ?? PAD + S.playhead * S.zoom - scroll.scrollLeft;
     const tAt = (scroll.scrollLeft + ax - PAD) / S.zoom;
     S.zoom = clamp(z, ZMIN, ZMAX);
-    const r = $('zoomRange');
-    r.value = zoomToRange(S.zoom);
-    r.style.setProperty('--fill', `${r.value}%`);
     renderTimeline();
     scroll.scrollLeft = PAD + tAt * S.zoom - ax;
     renderRuler();
@@ -758,17 +717,10 @@
     const w = $('tlScroll').clientWidth - PAD * 2 - 40;
     const T = total() || 30;
     S.zoom = clamp(w / T, ZMIN, ZMAX);
-    const r = $('zoomRange');
-    r.value = zoomToRange(S.zoom);
-    r.style.setProperty('--fill', `${r.value}%`);
     $('tlScroll').scrollLeft = 0;
     renderTimeline();
     renderPlayhead();
   }
-  $('zoomRange').addEventListener('input', (e) => setZoom(rangeToZoom(Number(e.target.value))));
-  $('zoomIn').addEventListener('click', () => setZoom(S.zoom * 1.5));
-  $('zoomOut').addEventListener('click', () => setZoom(S.zoom / 1.5));
-  $('fitBtn').addEventListener('click', fitZoom);
   $('tlScroll').addEventListener('wheel', (e) => {
     if (e.ctrlKey) {
       e.preventDefault();
@@ -830,7 +782,6 @@
     const move = (ev) => {
       const dt = (ev.clientX - x0) / S.zoom;
       const snapT = (seqT) => {
-        if (!S.snap) return seqT;
         const targets = [S.playhead];
         for (const t of targets) if (Math.abs(t - seqT) * S.zoom < SNAP_PX) return t;
         return seqT;
@@ -838,7 +789,7 @@
       if (side === 'l') {
         let ni = clamp(o.in + dt, 0, o.out - MIN_LEN);
         ni = clamp(o.in + snapT(clipStart + (ni - o.in)) - clipStart, 0, o.out - MIN_LEN);
-        if (S.snap && Math.abs(ni) * S.zoom < SNAP_PX) ni = 0;
+        if (Math.abs(ni) * S.zoom < SNAP_PX) ni = 0;
         c.in = ni;
         c._dx = (ni - o.in) * S.zoom; // left edge follows the cursor; gap closes on release
         c.in = o.in;
@@ -848,7 +799,7 @@
       } else {
         let no = clamp(o.out + dt, o.in + MIN_LEN, m.info.duration);
         no = clamp(o.in + snapT(clipStart + (no - o.in)) - clipStart, o.in + MIN_LEN, m.info.duration);
-        if (S.snap && Math.abs(m.info.duration - no) * S.zoom < SNAP_PX) no = m.info.duration;
+        if (Math.abs(m.info.duration - no) * S.zoom < SNAP_PX) no = m.info.duration;
         c.out = no;
         showTip(ev, `End ${fmtTC(no)} · ${fmtShort(no - o.in)}`);
         seekPreview(no - 0.001);
@@ -937,23 +888,6 @@
     else if (ev.clientX < r.left + 40) s.scrollLeft -= 18;
   }
 
-  /* ---------- bin interactions ---------- */
-
-  $('binList').addEventListener('click', (e) => {
-    const add = e.target.closest('[data-add]');
-    if (add) addMediaToTimeline(add.dataset.add);
-  });
-  $('binList').addEventListener('dblclick', (e) => {
-    const it = e.target.closest('.bin-item');
-    if (it && !e.target.closest('[data-add]')) addMediaToTimeline(it.dataset.media);
-  });
-  $('binList').addEventListener('dragstart', (e) => {
-    const it = e.target.closest('.bin-item');
-    if (!it) return;
-    e.dataTransfer.setData('text/qc-media', it.dataset.media);
-    e.dataTransfer.effectAllowed = 'copy';
-  });
-
   /* ---------- file drop ---------- */
 
   let dragDepth = 0;
@@ -995,25 +929,18 @@
 
   const choose = async () => importPaths(await qc.openFiles());
   $('addBtn').addEventListener('click', choose);
-  $('binDrop').addEventListener('click', choose);
   $('chooseBtn').addEventListener('click', choose);
 
   /* ---------- buttons & keys ---------- */
 
   $('playBtn').addEventListener('click', togglePlay);
-  $('toStartBtn').addEventListener('click', () => { pause(); seekTo(0); followPlayhead(); });
-  $('toEndBtn').addEventListener('click', () => { pause(); seekTo(total()); followPlayhead(); });
   $('prevFrameBtn').addEventListener('click', () => step(-1));
   $('nextFrameBtn').addEventListener('click', () => step(1));
-  $('splitBtn').addEventListener('click', split);
-  $('deleteBtn').addEventListener('click', removeSelected);
   $('openProjBtn').addEventListener('click', () => openProject());
   $('saveProjBtn').addEventListener('click', () => saveProject());
   $('editName').addEventListener('change', markDirty);
   $('undoBtn').addEventListener('click', undo);
   $('redoBtn').addEventListener('click', redo);
-  $('snapBtn').setAttribute('aria-pressed', String(S.snap));
-  $('snapBtn').addEventListener('click', () => { S.snap = !S.snap; store.set('qc.snap', S.snap); $('snapBtn').setAttribute('aria-pressed', String(S.snap)); });
   $('exportBtn').addEventListener('click', () => openExport());
   video.addEventListener('click', togglePlay);
 
@@ -1045,6 +972,33 @@
     }
   });
 
+  /* ---------- hover hints ---------- */
+
+  const hint = $('tip');
+  let hintFor = null;
+  function showHint(el) {
+    hintFor = el;
+    // A modal dialog sits in the top layer; the hint has to live inside it to show above it.
+    const host = el.closest('dialog') || document.body;
+    if (hint.parentNode !== host) host.appendChild(hint);
+    const tpl = el.dataset.tipHtml && document.getElementById(`${el.dataset.tipHtml}Tip`);
+    if (tpl) hint.innerHTML = tpl.innerHTML; else hint.textContent = el.dataset.tip;
+    hint.classList.toggle('wide', !!tpl || hint.textContent.length > 60);
+    hint.hidden = false;
+    const r = el.getBoundingClientRect();
+    const h = hint.getBoundingClientRect();
+    const below = r.bottom + 8 + h.height < window.innerHeight;
+    hint.style.top = `${below ? r.bottom + 8 : r.top - h.height - 8}px`;
+    hint.style.left = `${clamp(r.left + r.width / 2 - h.width / 2, 8, window.innerWidth - h.width - 8)}px`;
+  }
+  function hideHint() { hintFor = null; hint.hidden = true; }
+  const hintTarget = (e) => e.target.closest && e.target.closest('[data-tip],[data-tip-html]');
+  document.addEventListener('pointerover', (e) => { const el = hintTarget(e); if (el && el !== hintFor && !el.disabled) showHint(el); else if (!el && hintFor) hideHint(); });
+  document.addEventListener('pointerdown', hideHint);
+  document.addEventListener('focusin', (e) => { const el = hintTarget(e); if (el && e.target.matches(':focus-visible')) showHint(el); });
+  document.addEventListener('focusout', hideHint);
+  window.addEventListener('blur', hideHint);
+
   /* ---------- export ---------- */
 
   const FORMATS = {
@@ -1060,7 +1014,7 @@
   const ACODEC = { aac: 'AAC', alac: 'ALAC (lossless)', mp3: 'MP3', opus: 'Opus', flac: 'FLAC (lossless)', pcm: 'PCM (uncompressed)' };
   const LOSSLESS_A = ['alac', 'flac', 'pcm'];
   const PRESETS = [
-    { id: 'lossless', label: 'Lossless', q: 100, ab: 320 },
+    { id: 'lossless', label: 'Best (lossless)', q: 100, ab: 320 },
     { id: 'high', label: 'High', q: 82, ab: 256 },
     { id: 'balanced', label: 'Balanced', q: 62, ab: 192 },
     { id: 'small', label: 'Small file', q: 38, ab: 128 },
@@ -1069,7 +1023,7 @@
 
   let X = Object.assign({
     format: 'mp4', vcodec: 'h264', acodec: 'aac', abitrate: 192, quality: 82, resolution: 0, fps: 0,
-    speed: 'balanced', mute: false, copy: false, gifWidth: 480, gifFps: 15,
+    speed: 'balanced', mute: false, copy: true, gifWidth: 480, gifFps: 15, more: false,
   }, store.get('qc.export', {}));
   let phase = 'settings';
   let exportResult = null;
@@ -1095,7 +1049,7 @@
     await normalize();
     renderExport();
     const d = $('exportDlg');
-    if (!d.open) d.showModal();
+    if (!d.open) { d.showModal(); $('xSave').focus(); }
   }
 
   function renderExport() {
@@ -1147,28 +1101,33 @@
     const opt = (list, val) => list.map(([v, l]) => `<option value="${v}"${String(v) === String(val) ? ' selected' : ''}>${esc(l)}</option>`).join('');
     const qShown = X.vcodec === 'ffv1' ? 100 : X.quality;
 
+    const smartOn = X.copy && X.copyAvailable;
     d.innerHTML = `<div class="dlg-head"><h2 id="exportTitle">Export</h2><button class="icon-btn" id="xClose" aria-label="Close"><svg data-icon="x"></svg></button></div>
       <div class="dlg-body">
         <div>
-          <div class="group-label">Format</div>
+          <div class="group-label">Format ${info(f.note)}</div>
           <div class="seg" id="xFmt">${Object.entries(FORMATS).map(([k, v]) => `<button type="button" data-v="${k}" aria-pressed="${k === X.format}">${v.label}</button>`).join('')}</div>
-          <div class="fmt-note">${esc(f.note)}</div>
         </div>
-        ${X.copyAvailable ? `<label class="check instant"><input type="checkbox" id="xCopy" ${X.copy ? 'checked' : ''}><span>Keep original video quality<small>Copies your footage untouched and only rebuilds the few frames around each cut. Exact cuts, much faster, same picture.</small></span></label>` : ''}
-        <div class="quality${locked}">
-          <div class="group-label">Quality <em>${hasV && !isGif ? esc(qualityName(qShown)) : ''}</em></div>
+        ${X.copyAvailable ? `<label class="check"><input type="checkbox" id="xCopy" ${X.copy ? 'checked' : ''}><span>Keep original video quality</span>${info('Copies your footage untouched and only rebuilds the few frames around each cut. Exact cuts, faster, same picture. Turn it off to change the size, frame rate or file size.')}</label>` : ''}
+        <div class="${smartOn && hasV ? 'disabled-block' : ''}">
+          <div class="group-label">Quality ${info('Best keeps every detail but makes very big files. Small file is good for sending in a chat. High suits most things.')}</div>
           <div class="seg" id="xPreset">${PRESETS.map((p) => `<button type="button" data-v="${p.id}" aria-pressed="${hasV && !isGif ? Math.round(X.quality) === p.q : X.abitrate === p.ab && !losslessA === (p.q !== 100)}">${p.label}</button>`).join('')}</div>
-          ${hasV && !isGif ? `<div class="quality-row"><span>Smaller file</span><input type="range" id="xQ" min="0" max="100" value="${qShown}" style="--fill:${qShown}%" aria-label="Video quality" ${X.vcodec === 'ffv1' ? 'disabled' : ''}><span>Best quality</span></div>` : ''}
         </div>
-        <div class="adv">
-          ${hasV && !isGif ? `<label class="field${locked}"><span>Video codec</span><select id="xV">${opt(f.video.map((v) => [v, VCODEC[v]]), X.vcodec)}</select></label>` : ''}
-          ${hasV ? `<label class="field${locked}"><span>Resolution</span><select id="xRes">${isGif ? opt([[320, '320 px wide'], [480, '480 px wide'], [640, '640 px wide'], [800, '800 px wide'], [1080, '1080 px wide']], X.gifWidth) : opt(resOpts, X.resolution)}</select></label>` : ''}
-          ${hasV ? `<label class="field${locked}"><span>Frame rate</span><select id="xFps">${isGif ? opt([[10, '10'], [15, '15'], [20, '20'], [25, '25']], X.gifFps) : opt(fpsOpts, X.fps)}</select></label>` : ''}
-          ${hasV && !isGif ? `<label class="field${locked}"><span>Encode speed</span><select id="xSpeed">${opt([['fast', 'Faster'], ['balanced', 'Balanced'], ['small', 'Smaller file (slower)']], X.speed)}</select></label>` : ''}
-          ${hasA ? `<label class="field"><span>Audio</span><select id="xA" ${X.mute && hasV ? 'disabled' : ''}>${opt(f.audio.map((a) => [a, ACODEC[a]]), X.acodec)}</select></label>` : ''}
-          ${hasA ? `<label class="field"><span>Audio quality</span><select id="xAb" ${losslessA || (X.mute && hasV) ? 'disabled' : ''}>${losslessA ? '<option>Lossless</option>' : opt([[320, '320 kbps'], [256, '256 kbps'], [192, '192 kbps'], [128, '128 kbps'], [96, '96 kbps'], [64, '64 kbps']], X.abitrate)}</select></label>` : ''}
-        </div>
-        ${hasV && hasA && anyAudio ? `<label class="check"><input type="checkbox" id="xMute" ${X.mute ? 'checked' : ''}><span>Remove all audio</span></label>` : ''}
+        <details class="more" id="xMore" ${X.more ? 'open' : ''}>
+          <summary>More options</summary>
+          <div class="more-body">
+            ${hasV && !isGif ? `<div class="quality-row${locked}"><span>Smaller file</span><input type="range" id="xQ" min="0" max="100" value="${qShown}" style="--fill:${qShown}%" aria-label="Video quality" ${X.vcodec === 'ffv1' ? 'disabled' : ''}><span>Best quality</span><output id="xQName">${esc(qualityName(qShown))}</output></div>` : ''}
+            <div class="adv">
+              ${hasV && !isGif ? `<label class="field${locked}"><span>Video codec</span><select id="xV">${opt(f.video.map((v) => [v, VCODEC[v]]), X.vcodec)}</select></label>` : ''}
+              ${hasV ? `<label class="field${locked}"><span>Resolution</span><select id="xRes">${isGif ? opt([[320, '320 px wide'], [480, '480 px wide'], [640, '640 px wide'], [800, '800 px wide'], [1080, '1080 px wide']], X.gifWidth) : opt(resOpts, X.resolution)}</select></label>` : ''}
+              ${hasV ? `<label class="field${locked}"><span>Frame rate</span><select id="xFps">${isGif ? opt([[10, '10'], [15, '15'], [20, '20'], [25, '25']], X.gifFps) : opt(fpsOpts, X.fps)}</select></label>` : ''}
+              ${hasV && !isGif ? `<label class="field${locked}"><span>Encode speed</span><select id="xSpeed">${opt([['fast', 'Faster'], ['balanced', 'Balanced'], ['small', 'Smaller file (slower)']], X.speed)}</select></label>` : ''}
+              ${hasA ? `<label class="field"><span>Audio</span><select id="xA" ${X.mute && hasV ? 'disabled' : ''}>${opt(f.audio.map((x) => [x, ACODEC[x]]), X.acodec)}</select></label>` : ''}
+              ${hasA ? `<label class="field"><span>Audio quality</span><select id="xAb" ${losslessA || (X.mute && hasV) ? 'disabled' : ''}>${losslessA ? '<option>Lossless</option>' : opt([[320, '320 kbps'], [256, '256 kbps'], [192, '192 kbps'], [128, '128 kbps'], [96, '96 kbps'], [64, '64 kbps']], X.abitrate)}</select></label>` : ''}
+            </div>
+            ${hasV && hasA && anyAudio ? `<label class="check"><input type="checkbox" id="xMute" ${X.mute ? 'checked' : ''}><span>Remove all sound</span></label>` : ''}
+          </div>
+        </details>
         ${!anyAudio && !hasV ? `<div class="err-box" style="font-family:inherit">None of your clips have sound, so there’s nothing to save as audio.</div>` : ''}
         ${exportError ? `<div class="err-box">${esc(exportError)}</div>` : ''}
       </div>
@@ -1195,7 +1154,8 @@
       set(patch);
     }));
     const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
-    on('xQ', 'input', (e) => { X.quality = Number(e.target.value); e.target.style.setProperty('--fill', `${X.quality}%`); d.querySelector('.quality .group-label em').textContent = qualityName(X.quality); estimate(); });
+    on('xQ', 'input', (e) => { X.quality = Number(e.target.value); e.target.style.setProperty('--fill', `${X.quality}%`); $('xQName').textContent = qualityName(X.quality); estimate(); });
+    on('xMore', 'toggle', (e) => { X.more = e.target.open; store.set('qc.export', X); });
     on('xQ', 'change', () => set({}));
     on('xV', 'change', (e) => set({ vcodec: e.target.value }));
     on('xRes', 'change', (e) => set(isGif ? { gifWidth: Number(e.target.value) } : { resolution: Number(e.target.value) }));
@@ -1206,7 +1166,6 @@
     on('xMute', 'change', (e) => set({ mute: e.target.checked }));
     on('xCopy', 'change', (e) => set({ copy: e.target.checked }));
     $('xSave').addEventListener('click', startExport);
-    if (!d.contains(document.activeElement) || document.activeElement === d) $('xSave').focus();
     estimate();
   }
 
