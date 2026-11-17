@@ -1,7 +1,7 @@
 {
   "name": "quickcut",
   "productName": "Quickcut",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Quick, simple video editor: drop clips in, trim, merge, save.",
   "author": "Quickcut",
   "main": "src/main.js",
