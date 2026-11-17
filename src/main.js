@@ -22,7 +22,7 @@ function createWindow() {
     height: 900,
     minWidth: 980,
     minHeight: 640,
-    backgroundColor: '#100c0b',
+    backgroundColor: '#141414',
     title: 'Quickcut',
     icon: path.join(__dirname, 'renderer', 'icon.png'),
     autoHideMenuBar: true,
@@ -50,6 +50,17 @@ function createWindow() {
         const img = await win.webContents.capturePage();
         fs.writeFileSync(process.env.QC_SHOT, img.toPNG());
         console.log('SHOT', process.env.QC_SHOT);
+      }
+      // QC_SHOTS=dir|theme1,theme2: one capture per theme of the same edit.
+      if (process.env.QC_SHOTS) {
+        const [dir, list] = process.env.QC_SHOTS.split('|');
+        for (const t of list.split(',')) {
+          await win.webContents.executeJavaScript(`window.__qcSetTheme(${JSON.stringify(t)})`);
+          await new Promise((r) => setTimeout(r, 900));
+          const img = await win.webContents.capturePage();
+          fs.writeFileSync(path.join(dir, `${t}.png`), img.toPNG());
+          console.log('SHOT', t);
+        }
       }
       if (process.env.QC_QUIT) app.quit();
     });

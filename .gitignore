@@ -5,3 +5,4 @@ samples/
 .impeccable/decision-*.json
 .impeccable/questions/
 .impeccable/hook.cache.json
+.impeccable/mocks/

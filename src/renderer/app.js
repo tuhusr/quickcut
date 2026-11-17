@@ -598,7 +598,6 @@
       el.style.width = `${w}px`;
       el.classList.toggle('selected', c.id === S.selected);
       el.classList.toggle('narrow', w < 110);
-      el.classList.toggle('develop', m.thumbs.length > 0 && Date.now() - m.addedAt < 1700);
       el.querySelector('.nm').textContent = m.name.replace(/\.[^.]+$/, '');
       el.querySelector('.du').textContent = fmtShort(len(c));
       let mute = el.querySelector('.clip-muted');
@@ -608,9 +607,9 @@
       el.classList.toggle('audio-only', !m.info.hasVideo);
       const wave = el.querySelector('.clip-wave');
       if (m.wave) {
-        wave.style.backgroundImage = `url('${m.wave}')`;
-        wave.style.backgroundSize = `${m.info.duration * S.zoom}px 100%`;
-        wave.style.backgroundPosition = `${-(c.in * S.zoom + (c._dx || 0))}px 0`;
+        wave.style.maskImage = `url('${m.wave}')`;
+        wave.style.maskSize = `${m.info.duration * S.zoom}px 100%`;
+        wave.style.maskPosition = `${-(c.in * S.zoom + (c._dx || 0))}px 0`;
       }
       el.querySelector('.clip-fade.in').style.width = `${Math.min(w, (c.fadeIn || 0) * S.zoom)}px`;
       el.querySelector('.clip-fade.out').style.width = `${Math.min(w, (c.fadeOut || 0) * S.zoom)}px`;
@@ -639,9 +638,9 @@
       if (!c.muted && mute) mute.remove();
       const wave = el.querySelector('.clip-wave');
       if (m.wave) {
-        wave.style.backgroundImage = `url('${m.wave}')`;
-        wave.style.backgroundSize = `${m.info.duration * S.zoom}px 100%`;
-        wave.style.backgroundPosition = `${-(c.in * S.zoom)}px 0`;
+        wave.style.maskImage = `url('${m.wave}')`;
+        wave.style.maskSize = `${m.info.duration * S.zoom}px 100%`;
+        wave.style.maskPosition = `${-(c.in * S.zoom)}px 0`;
       }
       el.querySelector('.clip-fade.in').style.width = `${Math.min(w, (c.fadeIn || 0) * S.zoom)}px`;
       el.querySelector('.clip-fade.out').style.width = `${Math.min(w, (c.fadeOut || 0) * S.zoom)}px`;
@@ -771,9 +770,6 @@
         span.textContent = ch;
         span.className = /\d/.test(ch) ? 'd' : 'p';
         // centiseconds change every frame while playing; only the slower digits roll
-        if (roll && prev.length === str.length && !(S.playing && i >= str.length - 2)) {
-          span.classList.remove('roll'); void span.offsetWidth; span.classList.add('roll');
-        }
       }
     });
   }
@@ -867,6 +863,7 @@
   // One bar above the timeline: the selected clip's controls, or the edit's summary.
   function renderClipBar() {
     const box = $('clipBar');
+    box.dataset.kind = selectedClip() && isAudioClip(selectedClip()) ? 'audio' : 'video';
     if (box.contains(document.activeElement) && document.activeElement.matches('input[type=text]')) return;
     const c = selectedClip();
     const splitBtn = `<button class="btn btn-quiet btn-sm" id="fSplit" data-tip="Cut the clip in two at the playhead (S)"><svg data-icon="scissors"></svg><span>Split</span></button>`;
@@ -1693,6 +1690,23 @@
 
   qc.onOpenPaths((paths) => importPaths(paths));
 
+  // Dark or light, remembered per machine. Dark is the default: footage reads truest on it.
+  function setMode(mode) {
+    document.documentElement.dataset.mode = mode;
+    store.set('qc.mode', mode);
+    const b = $('modeBtn');
+    const light = mode === 'light';
+    b.querySelector('svg').setAttribute('data-icon', light ? 'moon' : 'sun');
+    paintIcons(b);
+    b.setAttribute('aria-label', light ? 'Switch to dark mode' : 'Switch to light mode');
+    b.dataset.tip = light ? 'Dark mode' : 'Light mode';
+    if (hintFor === b) showHint(b);
+    renderTimeline(true);
+  }
+  $('modeBtn').addEventListener('click', () => setMode(document.documentElement.dataset.mode === 'light' ? 'dark' : 'light'));
+  setMode(store.get('qc.mode', 'dark'));
+
+  window.__qcSetTheme = setMode;
   window.__qcImport = importPaths;
   window.__qcSeek = seekTo;
   window.__qcMediaThumbRate = (id) => media.get(id).thumbRate;

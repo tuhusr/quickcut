@@ -1,0 +1,807 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-17T15:38:00.362Z",
+  "title": "Design System: Quickcut",
+  "extensions": {
+    "colorMeta": {
+      "ink-black": {
+        "role": "neutral",
+        "displayName": "Ink Black",
+        "canonical": "oklch(19.1% 0.000 0)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "chrome-grey": {
+        "role": "neutral",
+        "displayName": "Chrome Grey",
+        "canonical": "oklch(22.2% 0.000 0)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "panel-grey": {
+        "role": "neutral",
+        "displayName": "Panel Grey",
+        "canonical": "oklch(24.4% 0.000 0)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "raised-grey": {
+        "role": "neutral",
+        "displayName": "Raised Grey",
+        "canonical": "oklch(28.1% 0.000 0)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "hover-grey": {
+        "role": "neutral",
+        "displayName": "Hover Grey",
+        "canonical": "oklch(32.1% 0.000 0)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "track-well": {
+        "role": "neutral",
+        "displayName": "Track Well",
+        "canonical": "oklch(20.5% 0.000 0)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "viewer-black": {
+        "role": "neutral",
+        "displayName": "Viewer Black",
+        "canonical": "oklch(0.0% 0.000 0)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#ffffff10",
+        "mode": "dark",
+        "note": "Translucent hairline; alpha over the surface beneath."
+      },
+      "hairline-strong": {
+        "role": "neutral",
+        "displayName": "Hairline Strong",
+        "canonical": "#ffffff1d",
+        "mode": "dark",
+        "note": "Translucent hairline; alpha over the surface beneath."
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Text Primary",
+        "canonical": "oklch(90.1% 0.000 0)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "text-secondary": {
+        "role": "neutral",
+        "displayName": "Text Secondary",
+        "canonical": "oklch(71.5% 0.000 0)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "text-tertiary": {
+        "role": "neutral",
+        "displayName": "Text Tertiary",
+        "canonical": "oklch(62.0% 0.000 0)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "playhead-orange": {
+        "role": "primary",
+        "displayName": "Playhead Orange",
+        "canonical": "oklch(71.4% 0.159 49.0)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#1e0100",
+          "#3d1701",
+          "#662d06",
+          "#954200",
+          "#c85c06",
+          "#ef7f3b",
+          "#fab591",
+          "#feeadf"
+        ]
+      },
+      "playhead-orange-ink": {
+        "role": "primary",
+        "displayName": "Orange Ink",
+        "canonical": "oklch(17.0% 0.032 53.6)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#150701",
+          "#302015",
+          "#4e3b30",
+          "#6d594d",
+          "#907b6f",
+          "#b29d8f",
+          "#d9c2b4",
+          "#ffeadd"
+        ]
+      },
+      "export-orange": {
+        "role": "primary",
+        "displayName": "Export Orange",
+        "canonical": "oklch(66.4% 0.171 43.6)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#1f0000",
+          "#421200",
+          "#692908",
+          "#9a3c04",
+          "#d0540d",
+          "#f6783d",
+          "#fab597",
+          "#fee9e1"
+        ]
+      },
+      "export-orange-hover": {
+        "role": "primary",
+        "displayName": "Export Orange Hover",
+        "canonical": "oklch(76.8% 0.131 51.3)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#1c0300",
+          "#3d1800",
+          "#662e01",
+          "#90460e",
+          "#bc662c",
+          "#e18850",
+          "#ffb487",
+          "#feeadf"
+        ]
+      },
+      "selection-white": {
+        "role": "neutral",
+        "displayName": "Selection White",
+        "canonical": "oklch(96.1% 0.000 0)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "slate-video": {
+        "role": "secondary",
+        "displayName": "Slate Video",
+        "canonical": "oklch(53.2% 0.068 252.0)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#000a24",
+          "#062544",
+          "#234163",
+          "#416083",
+          "#6283a8",
+          "#83a5cb",
+          "#a8cbf3",
+          "#e3f0fe"
+        ]
+      },
+      "teal-sound": {
+        "role": "secondary",
+        "displayName": "Teal Sound",
+        "canonical": "oklch(55.7% 0.075 173.9)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#00100a",
+          "#002c22",
+          "#064b3d",
+          "#256b5a",
+          "#4b8f7d",
+          "#6db19e",
+          "#93d8c3",
+          "#c0feeb"
+        ]
+      },
+      "wave-video": {
+        "role": "secondary",
+        "displayName": "Slate Wave Tint",
+        "canonical": "oklch(83.4% 0.043 251.7)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#000b1c",
+          "#142538",
+          "#2f4156",
+          "#4c6075",
+          "#6e8299",
+          "#8fa4bc",
+          "#b4cae3",
+          "#e4f0fe"
+        ]
+      },
+      "wave-sound": {
+        "role": "secondary",
+        "displayName": "Teal Wave Tint",
+        "canonical": "oklch(83.9% 0.071 174.4)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#00100a",
+          "#002c22",
+          "#004c3d",
+          "#2a6b5b",
+          "#4f8e7d",
+          "#71b09e",
+          "#96d7c4",
+          "#bdffeb"
+        ]
+      },
+      "danger-red": {
+        "role": "status",
+        "displayName": "Danger Red",
+        "canonical": "oklch(71.2% 0.181 22.8)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#210001",
+          "#4b0008",
+          "#7b0316",
+          "#ad1628",
+          "#d7464a",
+          "#fe6a6b",
+          "#fbb1ad",
+          "#ffe9e7"
+        ]
+      },
+      "ok-green": {
+        "role": "status",
+        "displayName": "OK Green",
+        "canonical": "oklch(79.7% 0.164 159.7)",
+        "mode": "dark",
+        "tonalRamp": [
+          "#001005",
+          "#022c1a",
+          "#0b4c31",
+          "#066f48",
+          "#129864",
+          "#30bd80",
+          "#4ce7a1",
+          "#c6fede"
+        ]
+      },
+      "light-bg": {
+        "role": "neutral",
+        "displayName": "Light Bg",
+        "canonical": "oklch(92.5% 0.000 0)",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "light-chrome": {
+        "role": "neutral",
+        "displayName": "Light Chrome",
+        "canonical": "oklch(96.4% 0.000 0)",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "light-panel": {
+        "role": "neutral",
+        "displayName": "Light Panel",
+        "canonical": "oklch(98.5% 0.000 0)",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "light-raised": {
+        "role": "neutral",
+        "displayName": "Light Raised",
+        "canonical": "oklch(100.0% 0.000 0)",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "light-hover": {
+        "role": "neutral",
+        "displayName": "Light Hover",
+        "canonical": "oklch(94.0% 0.000 0)",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "light-track-well": {
+        "role": "neutral",
+        "displayName": "Light Track Well",
+        "canonical": "oklch(94.3% 0.000 0)",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "light-hairline": {
+        "role": "neutral",
+        "displayName": "Light Hairline",
+        "canonical": "#00000014",
+        "mode": "light",
+        "note": "Translucent hairline; alpha over the surface beneath."
+      },
+      "light-hairline-strong": {
+        "role": "neutral",
+        "displayName": "Light Hairline Strong",
+        "canonical": "#00000026",
+        "mode": "light",
+        "note": "Translucent hairline; alpha over the surface beneath."
+      },
+      "light-text-primary": {
+        "role": "neutral",
+        "displayName": "Light Text Primary",
+        "canonical": "oklch(22.6% 0.000 0)",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "light-text-secondary": {
+        "role": "neutral",
+        "displayName": "Light Text Secondary",
+        "canonical": "oklch(42.0% 0.000 0)",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "light-text-tertiary": {
+        "role": "neutral",
+        "displayName": "Light Text Tertiary",
+        "canonical": "oklch(51.7% 0.000 0)",
+        "mode": "light",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242424",
+          "#404040",
+          "#5d5d5d",
+          "#808080",
+          "#a1a1a1",
+          "#c7c7c7",
+          "#eeeeee"
+        ]
+      },
+      "light-accent": {
+        "role": "primary",
+        "displayName": "Light Accent",
+        "canonical": "oklch(61.2% 0.171 42.6)",
+        "mode": "light",
+        "tonalRamp": [
+          "#1f0000",
+          "#421200",
+          "#6e2500",
+          "#9a3c08",
+          "#d05414",
+          "#f67740",
+          "#fab498",
+          "#ffe9e1"
+        ]
+      },
+      "light-playhead": {
+        "role": "primary",
+        "displayName": "Light Playhead",
+        "canonical": "oklch(64.5% 0.174 44.0)",
+        "mode": "light",
+        "tonalRamp": [
+          "#200000",
+          "#401400",
+          "#6a2905",
+          "#9b3b00",
+          "#d05402",
+          "#f77739",
+          "#fbb496",
+          "#ffe9e1"
+        ]
+      },
+      "light-export-orange-hover": {
+        "role": "primary",
+        "displayName": "Light Export Orange Hover",
+        "canonical": "oklch(73.3% 0.143 48.1)",
+        "mode": "light",
+        "tonalRamp": [
+          "#1e0100",
+          "#401500",
+          "#662d08",
+          "#954103",
+          "#c36125",
+          "#e8834b",
+          "#fab592",
+          "#feeadf"
+        ]
+      },
+      "light-wave-sound": {
+        "role": "secondary",
+        "displayName": "Light Wave Sound",
+        "canonical": "oklch(42.4% 0.061 174.7)",
+        "mode": "light",
+        "tonalRamp": [
+          "#00100a",
+          "#002c22",
+          "#134a3e",
+          "#35695b",
+          "#588c7e",
+          "#79ae9f",
+          "#9ed5c5",
+          "#c5fdec"
+        ]
+      },
+      "light-danger-red": {
+        "role": "status",
+        "displayName": "Light Danger Red",
+        "canonical": "oklch(53.9% 0.194 26.7)",
+        "mode": "light",
+        "tonalRamp": [
+          "#220000",
+          "#4a0204",
+          "#790c10",
+          "#b10414",
+          "#dc403b",
+          "#fb6f64",
+          "#feb0a7",
+          "#fee9e6"
+        ]
+      },
+      "light-ok-green": {
+        "role": "status",
+        "displayName": "Light Ok Green",
+        "canonical": "oklch(56.3% 0.120 158.5)",
+        "mode": "light",
+        "tonalRamp": [
+          "#001005",
+          "#022c19",
+          "#0c4c30",
+          "#096f46",
+          "#2e9665",
+          "#56b885",
+          "#7ddfaa",
+          "#c7fedd"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Export progress percentage only."
+      },
+      "timecode": {
+        "displayName": "Timecode",
+        "purpose": "Current-time readout in the transport, MM:SS:FF, fixed-width digit cells."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Empty-viewer prompt."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Dialog titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Base UI text; buttons at 600."
+      },
+      "control": {
+        "displayName": "Control",
+        "purpose": "Small buttons, segments, selects, toggles."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Field and group labels, sentence case, secondary text."
+      },
+      "number-small": {
+        "displayName": "Number Small",
+        "purpose": "Ruler labels and clip durations."
+      }
+    },
+    "shadows": [],
+    "elevation": {
+      "model": "flat",
+      "note": "No shadows by user request. Separation by tonal grey steps and Hairline Strong borders; dialog backdrop scrim #000000a6."
+    },
+    "motion": [
+      {
+        "name": "colour-hover",
+        "value": "background-color, border-color, color 120-150ms",
+        "purpose": "Only hover feedback on controls. Nothing moves or scales."
+      },
+      {
+        "name": "progress",
+        "value": "transform .2s linear",
+        "purpose": "Export progress bar fill."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "durations .01ms",
+        "purpose": "All transitions collapse under prefers-reduced-motion."
+      }
+    ],
+    "focus": {
+      "value": "outline: 2px solid var(--accent); outline-offset: 2px",
+      "purpose": "Every focusable control; fields turn their edge orange instead."
+    },
+    "layout": {
+      "rows": "52px top bar / 1fr stage / 7px splitter / var(--tl-h, 320px) timeline",
+      "timeline": "clip bar (min 52px) / overview (26px) / ruler (28px) / video track (flex 1.5, min 84px) / audio track (flex 1, min 64px)"
+    },
+    "themes": {
+      "default": "dark (:root)",
+      "alternate": "light ([data-mode='light'])"
+    },
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Default flat button: Raised Grey fill, hairline edge, colour change on hover.",
+      "html": "<div class=\"ds-root\"><button class=\"ds-btn\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 5v14M5 12h14\"/></svg><span>Add clips</span></button></div>",
+      "css": ".ds-root{--bg:#141414;--chrome:#1b1b1b;--panel:#202020;--panel-2:#292929;--panel-3:#333333;--line:#ffffff10;--line-strong:#ffffff1d;--text:#dedede;--text-2:#a3a3a3;--text-3:#868686;--accent:#f0803c;--accent-ink:#1a0b03;--playhead:#f0803c;--sel:#f2f2f2;--primary-hover:#f59a62;--primary:#e6692c;--primary-ink:#1a0b03;--vclip:#4f6f93;--aclip:#3e8270;--radius:4px;--radius-clip:3px;--font-ui:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;--font-num:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;background:var(--chrome);padding:16px;} .ds-btn{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 14px;border:1px solid var(--line-strong);border-radius:var(--radius);font:600 14px/1 var(--font-ui);white-space:nowrap;cursor:pointer;transition:background-color .12s,border-color .12s,color .12s;background:var(--panel-2);color:var(--text);} .ds-btn:hover{background:var(--panel-3);} .ds-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single main action (Export, Save, Choose files). Flat Export Orange with near-black ink.",
+      "html": "<div class=\"ds-root\"><button class=\"ds-btn-primary\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M12 3v12M7 8l5-5 5 5\"/><path d=\"M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5\"/></svg><span>Export</span></button></div>",
+      "css": ".ds-root{--bg:#141414;--chrome:#1b1b1b;--panel:#202020;--panel-2:#292929;--panel-3:#333333;--line:#ffffff10;--line-strong:#ffffff1d;--text:#dedede;--text-2:#a3a3a3;--text-3:#868686;--accent:#f0803c;--accent-ink:#1a0b03;--playhead:#f0803c;--sel:#f2f2f2;--primary-hover:#f59a62;--primary:#e6692c;--primary-ink:#1a0b03;--vclip:#4f6f93;--aclip:#3e8270;--radius:4px;--radius-clip:3px;--font-ui:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;--font-num:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;background:var(--chrome);padding:16px;} .ds-btn-primary{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 14px;border:1px solid var(--line-strong);border-radius:var(--radius);font:600 14px/1 var(--font-ui);white-space:nowrap;cursor:pointer;transition:background-color .12s,border-color .12s,color .12s;background:var(--primary);border-color:var(--primary);color:var(--primary-ink);} .ds-btn-primary:hover{background:var(--primary-hover);border-color:var(--primary-hover);} .ds-btn-primary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Clip-bar tools (Split, Remove, Fit): no fill until hover.",
+      "html": "<div class=\"ds-root\"><button class=\"ds-btn-quiet\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"6\" cy=\"6\" r=\"3\"/><circle cx=\"6\" cy=\"18\" r=\"3\"/><path d=\"M8.6 7.6L20 18M8.6 16.4L20 6\"/></svg><span>Split</span></button></div>",
+      "css": ".ds-root{--bg:#141414;--chrome:#1b1b1b;--panel:#202020;--panel-2:#292929;--panel-3:#333333;--line:#ffffff10;--line-strong:#ffffff1d;--text:#dedede;--text-2:#a3a3a3;--text-3:#868686;--accent:#f0803c;--accent-ink:#1a0b03;--playhead:#f0803c;--sel:#f2f2f2;--primary-hover:#f59a62;--primary:#e6692c;--primary-ink:#1a0b03;--vclip:#4f6f93;--aclip:#3e8270;--radius:4px;--radius-clip:3px;--font-ui:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;--font-num:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;background:var(--chrome);padding:16px;} .ds-btn-quiet{display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 14px;border:1px solid var(--line-strong);border-radius:var(--radius);font:600 14px/1 var(--font-ui);white-space:nowrap;cursor:pointer;transition:background-color .12s,border-color .12s,color .12s;height:30px;padding:0 10px;gap:6px;font-size:13px;background:transparent;border-color:transparent;color:var(--text-2);} .ds-btn-quiet svg{width:16px;height:16px;} .ds-btn-quiet:hover{background:var(--panel-2);color:var(--text);} .ds-btn-quiet:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}"
+    },
+    {
+      "name": "Segmented Choice",
+      "kind": "chip",
+      "refersTo": "segment",
+      "description": "Export format and quality pickers; the pressed choice is Playhead Orange.",
+      "html": "<div class=\"ds-root\"><div class=\"ds-seg\"><button aria-pressed=\"true\">MP4</button><button aria-pressed=\"false\">MOV</button><button aria-pressed=\"false\">MKV</button><button aria-pressed=\"false\">WebM</button></div></div>",
+      "css": ".ds-root{--bg:#141414;--chrome:#1b1b1b;--panel:#202020;--panel-2:#292929;--panel-3:#333333;--line:#ffffff10;--line-strong:#ffffff1d;--text:#dedede;--text-2:#a3a3a3;--text-3:#868686;--accent:#f0803c;--accent-ink:#1a0b03;--playhead:#f0803c;--sel:#f2f2f2;--primary-hover:#f59a62;--primary:#e6692c;--primary-ink:#1a0b03;--vclip:#4f6f93;--aclip:#3e8270;--radius:4px;--radius-clip:3px;--font-ui:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;--font-num:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;background:var(--panel);padding:16px;} .ds-seg{display:flex;flex-wrap:wrap;gap:6px;} .ds-seg button{height:34px;padding:0 13px;border:1px solid var(--line-strong);border-radius:var(--radius);background:var(--panel-2);color:var(--text-2);font:600 13px/1 var(--font-ui);cursor:pointer;} .ds-seg button:hover{color:var(--text);} .ds-seg button[aria-pressed=\"true\"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);} .ds-seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}"
+    },
+    {
+      "name": "Timecode Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Trim field in the clip bar: dark well, hairline edge, tabular Display figures, orange edge on focus.",
+      "html": "<div class=\"ds-root\"><label class=\"ds-field\"><span>Start</span><input value=\"00:12:08\" spellcheck=\"false\"></label></div>",
+      "css": ".ds-root{--bg:#141414;--chrome:#1b1b1b;--panel:#202020;--panel-2:#292929;--panel-3:#333333;--line:#ffffff10;--line-strong:#ffffff1d;--text:#dedede;--text-2:#a3a3a3;--text-3:#868686;--accent:#f0803c;--accent-ink:#1a0b03;--playhead:#f0803c;--sel:#f2f2f2;--primary-hover:#f59a62;--primary:#e6692c;--primary-ink:#1a0b03;--vclip:#4f6f93;--aclip:#3e8270;--radius:4px;--radius-clip:3px;--font-ui:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;--font-num:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;background:var(--chrome);padding:16px;} .ds-field{display:flex;align-items:center;gap:6px;font:500 12.5px/1 var(--font-ui);color:var(--text-2);} .ds-field input{width:96px;height:30px;padding:0 8px;border:1px solid var(--line-strong);border-radius:var(--radius);background:var(--bg);color:var(--text);font:600 14px/1 var(--font-num);font-variant-numeric:tabular-nums;} .ds-field input:focus{outline:none;border-color:var(--accent);}"
+    },
+    {
+      "name": "Transport",
+      "kind": "nav",
+      "refersTo": "icon-button",
+      "description": "Frame step, round play button and the big tabular timecode readout.",
+      "html": "<div class=\"ds-root\"><div class=\"ds-transport\"><button class=\"ds-icon\" aria-label=\"Back one frame\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M15 6l-6 6 6 6\"/></svg></button><button class=\"ds-play\" aria-label=\"Play\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M7 4.5v15l12-7.5z\" fill=\"currentColor\" stroke=\"none\"/></svg></button><button class=\"ds-icon\" aria-label=\"Forward one frame\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M9 6l6 6-6 6\"/></svg></button><span class=\"ds-tc\">00:42:17</span><span class=\"ds-tc-sep\">/</span><span class=\"ds-tc-total\">04:48:16</span></div></div>",
+      "css": ".ds-root{--bg:#141414;--chrome:#1b1b1b;--panel:#202020;--panel-2:#292929;--panel-3:#333333;--line:#ffffff10;--line-strong:#ffffff1d;--text:#dedede;--text-2:#a3a3a3;--text-3:#868686;--accent:#f0803c;--accent-ink:#1a0b03;--playhead:#f0803c;--sel:#f2f2f2;--primary-hover:#f59a62;--primary:#e6692c;--primary-ink:#1a0b03;--vclip:#4f6f93;--aclip:#3e8270;--radius:4px;--radius-clip:3px;--font-ui:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;--font-num:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;background:var(--bg);padding:16px;} .ds-transport{display:flex;align-items:center;gap:2px;font-family:var(--font-num);font-variant-numeric:tabular-nums;} .ds-icon{width:34px;height:34px;display:inline-grid;place-items:center;border:0;border-radius:var(--radius);background:transparent;color:var(--text-2);cursor:pointer;transition:background-color .15s,color .15s;} .ds-icon:hover{background:var(--panel-2);color:var(--text);} .ds-play{width:42px;height:42px;display:inline-grid;place-items:center;border-radius:50%;background:var(--panel-2);border:1px solid var(--line-strong);color:var(--text);cursor:pointer;} .ds-play:hover{background:var(--panel-3);} .ds-icon:focus-visible,.ds-play:focus-visible{outline:2px solid var(--accent);outline-offset:2px;} .ds-tc{margin-left:18px;font-size:26px;font-weight:600;letter-spacing:.01em;color:var(--text);line-height:1;} .ds-tc-sep{margin:0 8px;color:var(--text-3);font-size:16px;} .ds-tc-total{font-size:16px;font-weight:500;color:var(--text-3);}"
+    },
+    {
+      "name": "Timeline Clips",
+      "kind": "custom",
+      "refersTo": "clip-label-video",
+      "description": "Signature: slate video clip (selected) and teal sound clip, each with a full-strength name band and tinted body, under the orange playhead.",
+      "html": "<div class=\"ds-root\"><div class=\"ds-track\"><div class=\"ds-clip ds-sel\"><div class=\"ds-lbl\"><span>Interview take 2</span><span class=\"ds-du\">0:42</span></div></div><div class=\"ds-clip ds-a\"><div class=\"ds-lbl\"><span>Soundtrack</span><span class=\"ds-du\">3:52</span></div></div><div class=\"ds-ph\"></div></div></div>",
+      "css": ".ds-root{--bg:#141414;--chrome:#1b1b1b;--panel:#202020;--panel-2:#292929;--panel-3:#333333;--line:#ffffff10;--line-strong:#ffffff1d;--text:#dedede;--text-2:#a3a3a3;--text-3:#868686;--accent:#f0803c;--accent-ink:#1a0b03;--playhead:#f0803c;--sel:#f2f2f2;--primary-hover:#f59a62;--primary:#e6692c;--primary-ink:#1a0b03;--vclip:#4f6f93;--aclip:#3e8270;--radius:4px;--radius-clip:3px;--font-ui:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;--font-num:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;background:#171717;padding:16px;} .ds-track{position:relative;display:grid;gap:10px;} .ds-clip{--c:var(--vclip);position:relative;height:56px;width:70%;border-radius:var(--radius-clip);background:color-mix(in oklab,var(--c),#05060a 72%);border:1px solid color-mix(in oklab,var(--c),black 30%);overflow:hidden;} .ds-a{--c:var(--aclip);width:95%;} .ds-sel{border-color:var(--sel);outline:1.5px solid var(--sel);} .ds-lbl{height:20px;padding:0 9px;display:flex;gap:8px;align-items:center;background:var(--c);color:#fff;font:600 11.5px/1 var(--font-ui);white-space:nowrap;} .ds-du{margin-left:auto;opacity:.85;font-family:var(--font-num);font-variant-numeric:tabular-nums;} .ds-ph{position:absolute;top:-8px;bottom:-4px;left:40%;width:2px;background:var(--playhead);}"
+    },
+    {
+      "name": "Tooltip",
+      "kind": "card",
+      "refersTo": "tooltip",
+      "description": "Floating hint: one grey step lighter with a hairline border, no shadow.",
+      "html": "<div class=\"ds-root\"><div class=\"ds-tip\">Cut the clip in two at the playhead (S)</div></div>",
+      "css": ".ds-root{--bg:#141414;--chrome:#1b1b1b;--panel:#202020;--panel-2:#292929;--panel-3:#333333;--line:#ffffff10;--line-strong:#ffffff1d;--text:#dedede;--text-2:#a3a3a3;--text-3:#868686;--accent:#f0803c;--accent-ink:#1a0b03;--playhead:#f0803c;--sel:#f2f2f2;--primary-hover:#f59a62;--primary:#e6692c;--primary-ink:#1a0b03;--vclip:#4f6f93;--aclip:#3e8270;--radius:4px;--radius-clip:3px;--font-ui:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;--font-num:'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;background:var(--chrome);padding:16px;} .ds-tip{display:inline-block;max-width:260px;padding:8px 11px;border-radius:var(--radius);background:var(--panel-3);color:var(--text);border:1px solid var(--line-strong);font:400 12.5px/1.45 var(--font-ui);}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Grading Suite",
+    "overview": "Quickcut is built like a colour-grading room: calibrated neutral greys on every surface so the footage is the only colour on screen. The chrome steps from near-black to slightly lighter greys, back to front, and never takes a hue of its own. Two muted clip colours tell video from sound at a glance. One orange marks the things that matter right now: where you are (the playhead), what you picked (pressed choices) and the one action that finishes the job (Export).\n\nThe room is flat. The user asked for no effects, so there are no shadows, gradients, glows, inner highlights or press animations. Buttons are flat fills with a hairline edge that change colour on hover. Overlays sit apart through a hairline border and a one-step lighter grey. Density is that of a desktop tool: 34px controls, 14px gutters, everything on one screen. Numbers and timecode use tabular figures so frame counts never jitter.\n\nLight mode is the same system on light neutral greys. Every role keeps its job; only the values change.",
+    "keyCharacteristics": [
+      "Neutral greys only on chrome; colour belongs to the footage, the clips and the one orange.",
+      "Strictly flat: hairlines and tonal steps do the separating, never shadows.",
+      "Fixed one-screen layout: top bar, viewer, transport, clip bar, overview bar, ruler, video track, audio track.",
+      "Segoe UI Variable throughout; the Display cut with tabular figures for every number.",
+      "Frame-exact timecode in MM:SS:FF, set big in the transport."
+    ],
+    "rules": [
+      {
+        "name": "The Footage-Only Colour Rule",
+        "body": "Chrome surfaces are neutral grey with no hue. If a surface is not footage, a clip, the playhead or the main action, it is grey.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Orange Rule",
+        "body": "Orange means \"now, chosen, or finish\": playhead, pressed choices, focus, the main action. Never use it for decoration, headings or secondary buttons.",
+        "section": "colors"
+      },
+      {
+        "name": "The Selection Is Neutral Rule",
+        "body": "A selected clip is outlined in Selection White (black in light mode), not orange. This keeps orange for the playhead, which often crosses the selected clip.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Numbers Rule",
+        "body": "Every number that changes (timecode, durations, sizes, percentages, trim fields) is set in Segoe UI Variable Display with tabular figures.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "Labels are short sentence-case words. No uppercase tracking, no labels above headings.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Effects Rule",
+        "body": "No box-shadow, text-shadow, glow, decorative gradient, inner highlight, bevel or press animation anywhere. Buttons are a flat fill, a hairline edge and a colour change on hover. Hard-stop fills that carry data are not decoration and are allowed: the slider's filled track and the track time grid.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** keep every chrome surface on the neutral grey steps (#141414, #1b1b1b, #202020, #292929, #333333 in dark).",
+      "**Do** keep orange for the playhead, pressed choices, focus and the single main action.",
+      "**Do** separate overlays with a Hairline Strong border and a lighter grey step.",
+      "**Do** set every changing number in Segoe UI Variable Display with tabular figures; timecode is MM:SS:FF.",
+      "**Do** colour video clips slate (#4f6f93) and sound clips teal (#3e8270), and nothing else in those hues.",
+      "**Do** keep the layout order: top bar, viewer, transport, clip bar, overview bar, ruler, video track, audio track, with a resizable timeline.",
+      "**Do** define every new colour as a token in both the dark and the light set."
+    ],
+    "donts": [
+      "**Don't** use box-shadows, glows, decorative gradients, inner highlights, bevels or press animations. The user asked for no effects.",
+      "**Don't** use saturated blue chrome or tinted greys; the room is neutral so footage reads true.",
+      "**Don't** use orange for decoration, headings, secondary buttons or the selected-clip outline.",
+      "**Don't** bring back a condensed display face; the user had it removed.",
+      "**Don't** add panels, sidebars or nested menus; every core action stays on the one screen."
+    ]
+  }
+}
