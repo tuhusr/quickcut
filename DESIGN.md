@@ -13,7 +13,7 @@ colors:
   hairline-strong: "#ffffff1d"
   text-primary: "#dedede"
   text-secondary: "#a3a3a3"
-  text-tertiary: "#868686"
+  text-tertiary: "#8c8c8c"
   playhead-orange: "#f0803c"
   playhead-orange-ink: "#1a0b03"
   export-orange: "#e6692c"
@@ -212,7 +212,7 @@ Calibrated neutral greys, two muted media colours and one orange, used sparingly
 - **Track Well** (#171717 / light #ececec): behind the tracks.
 - **Viewer Black** (#000000): the viewer in both modes; footage is judged against true black.
 - **Hairline** (#ffffff10 / light #00000014) and **Hairline Strong** (#ffffff1d / light #00000026): every divider, control edge and overlay border.
-- **Text** primary #dedede, secondary #a3a3a3, tertiary #868686 (light #1c1c1c, #4d4d4d, #686868).
+- **Text** primary #dedede, secondary #a3a3a3, tertiary #8c8c8c (light #1c1c1c, #4d4d4d, #686868).
 - **Selection White** (#f2f2f2 / light #1c1c1c): the selected clip's outline and handles.
 - **Status**: danger #ff6b6b (light #c62828) for invalid fields and error toasts; ok #3ddc97 (light #1e8a5a) for the done tick.
 
