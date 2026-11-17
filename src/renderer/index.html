@@ -76,8 +76,11 @@
       </div>
     </main>
 
+    <div class="splitter" id="splitter" role="separator" aria-orientation="horizontal" aria-label="Resize the timeline" data-tip="Drag to make the timeline taller or shorter. Double-click to reset."></div>
+
     <section class="timeline" aria-label="Timeline">
       <div class="clipbar" id="clipBar"></div>
+      <div class="overview" id="overview" aria-label="Whole edit overview: drag to move, pull the edges to zoom"></div>
       <div class="timeline-scroll" id="tlScroll">
         <div class="timeline-inner" id="tlInner">
           <div class="ruler" id="ruler"></div>
@@ -105,6 +108,9 @@
       <kbd>I</kbd><kbd class="k2">O</kbd><span>Trim start / end to the playhead</span>
       <kbd>Del</kbd><span>Remove the clip</span>
       <kbd>← →</kbd><span>One frame (hold Shift: 1 second)</span>
+      <kbd>+ / −</kbd><span>Zoom the timeline in / out</span>
+      <kbd>Z</kbd><span>Zoom to the selected clip</span>
+      <kbd>\</kbd><span>Show the whole edit</span>
       <kbd>Ctrl Z</kbd><span>Undo</span>
       <kbd>Ctrl N</kbd><span>New edit</span>
       <kbd>Ctrl S</kbd><span>Save project</span>

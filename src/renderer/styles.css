@@ -72,8 +72,8 @@ svg[data-icon] { width: 18px; height: 18px; flex: none; }
   height: 100vh;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 52px minmax(0, 1fr) clamp(230px, 34vh, 330px);
-  grid-template-areas: 'top' 'stage' 'tl';
+  grid-template-rows: 52px minmax(0, 1fr) 7px var(--tl-h, 320px);
+  grid-template-areas: 'top' 'stage' 'split' 'tl';
 }
 
 /* ---------- Buttons ---------- */
@@ -213,7 +213,7 @@ input[type='range']:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 .track.atrack { flex: 1 1 0; min-height: 64px; border-top: 1px solid var(--line); }
 .atrack .clip { top: 8px; bottom: 8px; }
 .atrack .track-empty { top: 8px; bottom: 8px; }
-.track-empty { position: absolute; left: 24px; right: 24px; top: 18px; bottom: 18px; display: grid; place-items: center; border: 1.5px dashed var(--line-strong); border-radius: var(--radius); color: var(--text-3); font-size: 13px; }
+.track-empty { position: absolute; left: 24px; top: 18px; bottom: 18px; display: grid; place-items: center; border: 1.5px dashed var(--line-strong); border-radius: var(--radius); color: var(--text-3); font-size: 13px; }
 
 
 /* Visible time grid: the timeline's structure, not decoration. */
@@ -230,7 +230,7 @@ input[type='range']:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 }
 .clip.dragging { opacity: .35; }
 .clip-frames { position: absolute; inset: 0; display: flex; overflow: hidden; pointer-events: none; }
-.clip-frames img { height: 100%; flex: none; object-fit: cover; display: block; }
+.clip-frames img { position: absolute; top: 0; height: 100%; object-fit: cover; display: block; }
 .clip-audio { position: absolute; inset: 0; display: grid; place-items: center; color: var(--text-3); }
 .clip-label {
   position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 10px 4px; display: flex; gap: 8px; align-items: baseline;
@@ -363,13 +363,13 @@ dialog.export::backdrop { background: #00000080; animation: fade-in .2s; }
 
 /* ---------- Clip bar: the selected clip's controls, right above it ---------- */
 .clipbar {
-  display: flex; align-items: center; gap: 6px 18px; flex-wrap: wrap; min-height: 50px; padding: 8px 12px 8px 16px;
+  display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; min-height: 50px; padding: 8px 12px 8px 16px;
   border-bottom: 1px solid var(--line);
 }
 .app[data-empty='true'] .clipbar { display: none; }
 .cb-meta { font: 600 15px/1 var(--font-num); letter-spacing: 0.03em; color: var(--text); font-variant-numeric: tabular-nums; }
 .cb-hint { color: var(--text-3); font-size: 13px; }
-.cb-name { font: 600 15px/1.2 var(--font-label); text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cb-name { font: 600 15px/1.2 var(--font-label); text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cb-group { display: flex; align-items: center; gap: 8px; }
 .cb-field { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-2); }
 .cb-field input, .cb-field select {
@@ -379,10 +379,10 @@ dialog.export::backdrop { background: #00000080; animation: fade-in .2s; }
 .cb-field select { padding: 0 6px; font-size: 13px; }
 .cb-field input:focus, .cb-field select:focus { outline: none; border-color: var(--accent); }
 .cb-field input.invalid { border-color: var(--danger); }
-.cb-group input[type='range'] { width: 110px; flex: none; }
+.cb-group input[type='range'] { width: 90px; flex: none; }
 .cb-group output { width: 40px; font: 600 14px/1 var(--font-num); color: var(--text-2); font-variant-numeric: tabular-nums; }
 .cb-end { margin-left: auto; display: flex; align-items: center; gap: 4px; }
-.zoom { display: flex; align-items: center; gap: 2px; margin-left: 10px; padding-left: 10px; border-left: 1px solid var(--line); }
+.zoom { display: flex; align-items: center; gap: 2px; margin-left: 6px; padding-left: 8px; border-left: 1px solid var(--line); }
 
 /* ---------- ⓘ hints ---------- */
 .info { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: var(--text-3); cursor: help; flex: none; vertical-align: middle; }
@@ -419,3 +419,26 @@ kbd {
 .clip.aclip { background: #1a1210; border-color: #4a3530; }
 .clip.aclip .clip-wave { top: 4px; bottom: 20px; height: auto; opacity: .9; mix-blend-mode: normal; }
 .clip.aclip .clip-label { background: transparent; padding-top: 0; }
+
+/* ---------- Resizable timeline ---------- */
+.splitter { grid-area: split; cursor: ns-resize; background: var(--bg); position: relative; }
+.splitter::after { content: ''; position: absolute; left: 50%; top: 2px; width: 44px; height: 3px; margin-left: -22px; border-radius: 3px; background: var(--line-strong); transition: background-color .15s; }
+.splitter:hover::after { background: var(--text-3); }
+
+/* ---------- Overview bar (whole edit, with the visible window) ---------- */
+.overview { position: relative; flex: none; height: 26px; margin: 6px 12px 4px; border-radius: 3px; background: #0b0807; cursor: pointer; overflow: hidden; }
+.app[data-empty='true'] .overview { display: none; }
+.overview i { position: absolute; height: 7px; border-radius: 1px; pointer-events: none; }
+.overview .ov-v { top: 5px; background: #6d5a52; }
+.overview .ov-a { top: 14px; background: #4a3b36; }
+.overview i.sel { background: var(--accent); }
+.overview .ov-ph { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent); pointer-events: none; }
+.ov-win { position: absolute; top: 0; bottom: 0; border: 1.5px solid #f1e8de; border-radius: 3px; background: #f1e8de1a; cursor: grab; }
+.ov-win:active { cursor: grabbing; }
+.ov-h { position: absolute; top: -1px; bottom: -1px; width: 8px; cursor: ew-resize; }
+.ov-h.l { left: -5px; }
+.ov-h.r { right: -5px; }
+.ov-h::after { content: ''; position: absolute; top: 6px; bottom: 6px; left: 3px; width: 2px; border-radius: 2px; background: #f1e8de; }
+
+/* zoom slider in the clip bar */
+.zoom input[type='range'] { width: 84px; flex: none; }

@@ -13,7 +13,7 @@ const send = (ch, data) => { if (win && !win.isDestroyed()) win.webContents.send
 
 // qc-media://<encoded path> streams local files to the <video> element with range support.
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'qc-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, bypassCSP: true } },
+  { scheme: 'qc-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, bypassCSP: true, corsEnabled: true } },
 ]);
 
 function createWindow() {
@@ -101,7 +101,7 @@ function serveMedia(req) {
   }
   if (start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
   const stream = Readable.toWeb(fs.createReadStream(file, { start, end }));
-  const headers = { 'Content-Type': type, 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes' };
+  const headers = { 'Content-Type': type, 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes', 'Access-Control-Allow-Origin': '*' };
   if (status === 206) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
   return new Response(stream, { status, headers });
 }
@@ -141,9 +141,15 @@ ipcMain.handle('open-files', async () => {
 });
 
 ipcMain.handle('probe', async (_e, file) => engine.probe(file));
-ipcMain.handle('thumbs', async (_e, file, duration, count) => {
-  const files = await engine.thumbs(file, duration, count);
-  return files.map((f) => pathToFileURL(f).toString());
+ipcMain.handle('thumbs', async (_e, file, duration) => {
+  const r = await engine.thumbs(file, duration);
+  return { rate: r.rate, urls: r.files.map((f) => pathToFileURL(f).toString()) };
+});
+ipcMain.handle('frames', async (_e, file, times) => {
+  const r = await engine.frames(file, times);
+  const out = {};
+  Object.entries(r).forEach(([t, f]) => { out[t] = pathToFileURL(f).toString(); });
+  return out;
 });
 ipcMain.handle('waveform', async (_e, file, duration) => pathToFileURL(await engine.waveform(file, duration)).toString());
 ipcMain.handle('proxy', async (_e, file) => {

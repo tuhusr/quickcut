@@ -115,20 +115,42 @@ async function keyframes(file) {
   return res;
 }
 
-// A strip of small frames across the clip, for the timeline.
-async function thumbs(file, duration, count = 12, height = 72) {
-  const dir = path.join(WORK, `t-${keyFor(file, `${count}-${height}`)}`);
-  const expected = Array.from({ length: count }, (_, i) => path.join(dir, `${String(i + 1).padStart(3, '0')}.jpg`));
-  if (expected.every((f) => fs.existsSync(f))) return expected;
+// A strip of small frames across the clip, for the timeline: evenly spaced (about two a second,
+// at most 600) and each one taken at a known time, so the strip can place it exactly.
+// Returns { rate, files } where files[n] shows the source at n / rate seconds.
+async function thumbs(file, duration, height = 72) {
+  const count = Math.round(Math.min(600, Math.max(8, duration * 2)));
+  const rate = count / Math.max(duration, 0.001);
+  const dir = path.join(WORK, `s-${keyFor(file, `${count}-${height}`)}`);
+  const index = path.join(dir, 'index.json');
+  try { return JSON.parse(fs.readFileSync(index, 'utf8')); } catch {}
   fs.mkdirSync(dir, { recursive: true });
-  // One seek per frame is far faster than decoding the whole file.
-  const step = duration / count;
-  await Promise.all(expected.map((out, i) => {
-    const t = Math.min(duration - 0.05, step * (i + 0.5));
-    return run(FFMPEG, ['-v', 'error', '-y', '-ss', String(Math.max(0, t)), '-i', file, '-frames:v', '1',
-      '-vf', `scale=-2:${height}`, '-q:v', '5', out]).done.catch(() => null);
-  }));
-  return expected.filter((f) => fs.existsSync(f));
+  // One decode pass with the fps filter: frame n is the source frame nearest n / rate.
+  await run(FFMPEG, ['-v', 'error', '-y', '-i', file, '-map', '0:v:0', '-an', '-sn',
+    '-vf', `fps=${rate.toFixed(6)}:round=near,scale=-2:${height}:flags=bilinear`, '-q:v', '6', path.join(dir, '%04d.jpg')]).done;
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.jpg')).sort().map((f) => path.join(dir, f));
+  const res = { rate, files };
+  fs.writeFileSync(index, JSON.stringify(res));
+  return res;
+}
+
+// Exact frames for a zoomed-in strip: one picture per requested time, cached per frame.
+async function frames(file, times, height = 72) {
+  const dir = path.join(WORK, `f-${keyFor(file, String(height))}`);
+  fs.mkdirSync(dir, { recursive: true });
+  const out = {};
+  const jobs = times.map((t) => async () => {
+    const f = path.join(dir, `${Math.round(t * 1000)}.jpg`);
+    if (!fs.existsSync(f)) {
+      await run(FFMPEG, ['-v', 'error', '-y', '-ss', Math.max(0, t - 0.002).toFixed(6), '-i', file, '-map', '0:v:0', '-frames:v', '1',
+        '-vf', `scale=-2:${height}:flags=bilinear`, '-q:v', '5', f]).done.catch(() => null);
+    }
+    if (fs.existsSync(f)) out[t] = f;
+  });
+  let next = 0;
+  const lane = async () => { while (next < jobs.length) await jobs[next++](); };
+  await Promise.all(Array.from({ length: Math.min(6, jobs.length) }, lane));
+  return out;
 }
 
 // Waveform picture of the whole file's audio; clips show their trimmed slice of it.
@@ -404,8 +426,10 @@ function buildExport(segments, infos, settings, outPath) {
   const fill = settings.fit === 'fill';
 
   const args = ['-hide_banner', '-v', 'error', '-y'];
+  // ffmpeg's exact seek returns the first frame at or after -ss; start 1 ms early so a cut placed
+  // on a frame's own timestamp begins on that frame, not the next one.
   segments.forEach((s) => {
-    args.push('-ss', s.in.toFixed(3), '-t', (s.out - s.in).toFixed(3), '-i', s.path);
+    args.push('-ss', Math.max(0, s.in - 0.001).toFixed(6), '-t', (s.out - s.in).toFixed(6), '-i', s.path);
   });
   if (audio) track.forEach((c) => args.push('-ss', c.in.toFixed(3), '-t', (c.out - c.in).toFixed(3), '-i', c.path));
 
@@ -684,4 +708,4 @@ function estimateSize(segments, infos, settings) {
 
 const clampN = (v, a, b) => Math.min(b, Math.max(a, v));
 
-module.exports = { detectGpu, gpuName, probe, thumbs, waveform, proxy, keyframes, exportVideo, cancelExport, canCopy, canSmartCut, estimateSize, FORMATS, WORK };
+module.exports = { detectGpu, gpuName, probe, thumbs, frames, waveform, proxy, keyframes, exportVideo, cancelExport, canCopy, canSmartCut, estimateSize, FORMATS, WORK };

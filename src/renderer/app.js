@@ -19,14 +19,26 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
   };
 
-  function fmtTC(t) {
-    t = Math.max(0, t || 0);
-    const cs = Math.floor((t * 100) % 100);
-    const s = Math.floor(t) % 60;
-    const m = Math.floor(t / 60) % 60;
-    const h = Math.floor(t / 3600);
+  // The edit runs at the first video clip's frame rate. The playhead, cuts and timecode all live
+  // on that frame grid, so what you see is exactly the frame that gets cut and exported.
+  let FPS = 30;
+  const frameDur = () => 1 / FPS;
+  const snapFrame = (t) => Math.round(t * FPS) / FPS;
+  const floorFrame = (t) => Math.floor(t * FPS + 1e-6) / FPS;
+  const srcFps = (m) => (m && m.info && m.info.fps) || FPS;
+  const snapSrc = (t, m) => { const f = srcFps(m); return Math.round(t * f) / f; };
+  const wholeFrames = (d, m) => { const f = srcFps(m); return Math.floor(d * f + 1e-3) / f; };
+
+  // MM:SS:FF (H:MM:SS:FF past an hour); FF counts frames inside the second.
+  function fmtTC(t, withFrames = true) {
+    t = Math.max(0, t || 0) + 1e-7;
+    const whole = Math.floor(t);
+    const ff = Math.min(Math.ceil(FPS) - 1, Math.floor((t - whole) * FPS + 1e-6));
+    const s = whole % 60;
+    const m = Math.floor(whole / 60) % 60;
+    const h = Math.floor(whole / 3600);
     const p = (n) => String(n).padStart(2, '0');
-    return (h ? `${h}:${p(m)}` : p(m)) + `:${p(s)}.${p(cs)}`;
+    return (h ? `${h}:${p(m)}` : p(m)) + `:${p(s)}` + (withFrames ? `:${p(ff)}` : '');
   }
   function fmtShort(t) {
     t = Math.max(0, t || 0);
@@ -35,12 +47,18 @@
     const s = Math.round(t % 60);
     return `${m}:${String(s).padStart(2, '0')}`;
   }
+  // Reads MM:SS:FF (frames last), or plain seconds such as 83.5 or 1:23.5.
   function parseTC(str) {
     str = String(str).trim();
     if (!str) return NaN;
     if (!/^[\d:.]+$/.test(str)) return NaN;
     const parts = str.split(':').map(Number);
     if (parts.some((n) => Number.isNaN(n))) return NaN;
+    if (!str.includes('.') && parts.length >= 3) {
+      const ff = parts.pop();
+      if (ff >= Math.ceil(FPS)) return NaN;
+      return parts.reduce((acc, n) => acc * 60 + n, 0) + ff / FPS;
+    }
     return parts.reduce((acc, n) => acc * 60 + n, 0);
   }
   const fmtBytes = (b) => {
@@ -111,7 +129,6 @@
   const isAudioClip = (c) => S.audio.includes(c);
   const clipById = (id) => S.clips.find((c) => c.id === id) || S.audio.find((c) => c.id === id);
   const selectedClip = () => clipById(S.selected);
-  const fpsOf = (c) => (c && media.get(c.mediaId).info.fps) || 30;
 
   function locate(t) {
     const st = starts();
@@ -139,10 +156,10 @@
     const wasEmpty = !hasContent();
     let at = audioAt ?? audioEnd();
     added.forEach((m) => {
-      const base = { id: uid(), mediaId: m.id, in: 0, out: m.info.duration, volume: 1, muted: false, fadeIn: 0, fadeOut: 0 };
+      const base = { id: uid(), mediaId: m.id, in: 0, out: wholeFrames(m.info.duration, m), volume: 1, muted: false, fadeIn: 0, fadeOut: 0 };
       // Video files go on the video track (their own sound stays with them); sound-only files go on the audio track.
       if (m.info.hasVideo) S.clips.push(base);
-      else { S.audio.push({ ...base, start: at }); at += m.info.duration; }
+      else { S.audio.push({ ...base, start: snapFrame(at) }); at = snapFrame(at) + len(base); }
     });
     if (wasEmpty) { fitZoom(); S.selected = null; }
     render();
@@ -169,8 +186,10 @@
         (i.hasVideo && i.hasAudio && !PLAYABLE_A.includes(i.acodec));
       if (needsProxy) makeProxy(m);
       if (i.hasVideo) {
-        qc.thumbs(p, i.duration, Math.max(8, Math.min(60, Math.round(i.duration * 2)))).then((t) => {
-          m.thumbs = t;
+        m.exact = new Map();
+        qc.thumbs(p, i.duration).then((t) => {
+          m.thumbs = t.urls;
+          m.thumbRate = t.rate;
           m.addedAt = Date.now();
           renderTimeline(true);
         }).catch(() => {});
@@ -288,6 +307,21 @@
   let currentIdx = -1;
   let pendingSeek = null;
   let wantPlay = false;
+  let queuedSeek = null;
+
+  // Aim a fifth of a frame inside the wanted frame: the decoder can't round to its neighbour.
+  const frameTarget = (local, m) => local + 0.2 / srcFps(m);
+  // While a seek is in flight only the newest target is kept, so fast scrubbing never lags behind.
+  function setVideoTime(t) {
+    if (video.seeking) { queuedSeek = t; return; }
+    video.currentTime = t;
+  }
+  video.addEventListener('seeked', () => {
+    if (queuedSeek === null) return;
+    const q = queuedSeek;
+    queuedSeek = null;
+    if (Math.abs(video.currentTime - q) > 1e-4) video.currentTime = q;
+  });
 
   function loadAt(idx, local, play) {
     const c = S.clips[idx];
@@ -299,13 +333,15 @@
     video.muted = c.muted;
     const waitingProxy = m.proxying !== null && m.proxying !== undefined && m.playPath === m.path;
     if (waitingProxy) { video.removeAttribute('src'); loadedPath = null; video.load(); wantPlay = false; return; }
+    const target = play ? local : frameTarget(local, m);
     if (loadedPath !== m.playPath) {
       loadedPath = m.playPath;
-      pendingSeek = local;
+      pendingSeek = target;
+      queuedSeek = null;
       wantPlay = play;
       video.src = qc.mediaUrl(m.playPath);
     } else {
-      if (Math.abs(video.currentTime - local) > 0.001) video.currentTime = local;
+      if (Math.abs(video.currentTime - target) > 0.001) setVideoTime(target);
       if (play && video.paused) video.play().catch(() => {});
     }
   }
@@ -324,7 +360,7 @@
   const inVideo = () => S.clips.length && S.playhead < vTotal() - 1e-6;
 
   function seekTo(t) {
-    S.playhead = clamp(t, 0, total());
+    S.playhead = clamp(snapFrame(t), 0, total());
     if (inVideo()) {
       clockBase = null;
       const loc = locate(S.playhead);
@@ -353,9 +389,12 @@
     requestAnimationFrame(tick);
   }
   function pause() {
+    const was = S.playing;
     S.playing = false;
     video.pause();
     clockBase = null;
+    // Stop on a whole frame, showing exactly that frame.
+    if (was) { S.playhead = floorFrame(S.playhead); const loc = inVideo() && locate(S.playhead); if (loc) loadAt(loc.i, loc.local, false); }
     syncAudio(true);
     renderPlayState();
   }
@@ -426,8 +465,7 @@
 
   function step(dir, big = false) {
     if (S.playing) pause();
-    const d = big ? 1 : 1 / fpsOf(S.clips[locate(S.playhead)?.i]);
-    seekTo(S.playhead + dir * d);
+    seekTo(snapFrame(S.playhead) + dir * (big ? 1 : frameDur()));
     followPlayhead();
   }
 
@@ -508,6 +546,7 @@
   /* ---------- render ---------- */
 
   function render() {
+    FPS = S.clips[0] ? srcFps(media.get(S.clips[0].mediaId)) : 30;
     app.dataset.empty = hasContent() || media.size ? 'false' : 'true';
     $('trackEmpty').hidden = S.clips.length > 0;
     $('atrackEmpty').hidden = S.audio.length > 0;
@@ -618,50 +657,106 @@
     return `${n} clip${n === 1 ? '' : 's'} · ${fmtTC(total())}`;
   }
 
+  // Pictures inside a video clip. Zoomed out: an evenly spaced strip, each picture the nearest
+  // sample to the moment at its left edge. Zoomed in past ~18 px a frame: one picture per frame,
+  // fetched exactly. Only what's on screen is drawn.
   function drawFrames(el, c, m, w, force) {
     const box = el.querySelector('.clip-frames');
-    const h = box.clientHeight || 80;
-    const key = `${c.in.toFixed(3)}|${c.out.toFixed(3)}|${S.zoom}|${w}|${h}|${m.thumbs.length}|${c._dx || 0}`;
-    if (!force && box.dataset.key === key) return;
-    box.dataset.key = key;
     if (!m.info.hasVideo) {
-      box.innerHTML = m.wave ? '' : '<div class="clip-audio"><svg data-icon="audio"></svg></div>';
-      paintIcons(box);
+      if (box.dataset.key !== 'audio') { box.dataset.key = 'audio'; box.innerHTML = m.wave ? '' : '<div class="clip-audio"><svg data-icon="audio"></svg></div>'; paintIcons(box); }
       return;
     }
-    if (!m.thumbs.length) { box.innerHTML = ''; return; }
-    const aspect = m.info.width && m.info.height ? m.info.width / m.info.height : 16 / 9;
-    const fw = Math.max(24, h * aspect);
-    const n = Math.min(240, Math.ceil(w / fw));
+    if (!m.thumbs.length) { box.innerHTML = ''; box.dataset.key = ''; return; }
+    const h = box.clientHeight || 80;
+    const scroll = $('tlScroll');
+    const x0 = parseFloat(el.style.left) || 0;
+    const visL = Math.max(0, scroll.scrollLeft - x0 - 40);
+    const visR = Math.min(w, scroll.scrollLeft + scroll.clientWidth - x0 + 40);
+    const key = `${c.in.toFixed(4)}|${c.out.toFixed(4)}|${S.zoom}|${w}|${h}|${m.thumbs.length}|${m.exact.size}|${c._dx || 0}|${Math.round(visL / 50)}|${Math.round(visR / 50)}`;
+    if (!force && box.dataset.key === key) return;
+    box.dataset.key = key;
+    if (visR <= visL) { box.innerHTML = ''; return; }
+    const f = srcFps(m);
     const shownIn = c.in + (c._dx || 0) / S.zoom;
+    const framePx = S.zoom / f;
+    const base = (t) => m.thumbs[clamp(Math.round(t * m.thumbRate), 0, m.thumbs.length - 1)];
+    const want = [];
+    const pic = (t) => {
+      const ex = m.exact.get(Math.round(t * 1000));
+      if (ex) return ex;
+      want.push(t);
+      return base(t);
+    };
     let html = '';
-    for (let k = 0; k < n; k++) {
-      const t = shownIn + ((k + 0.5) * fw) / S.zoom;
-      const idx = clamp(Math.floor((t / m.info.duration) * m.thumbs.length), 0, m.thumbs.length - 1);
-      html += `<img src="${m.thumbs[idx]}" style="width:${fw}px" alt="" draggable="false">`;
+    if (framePx >= 18) {
+      const n0 = Math.max(Math.ceil(shownIn * f - 1e-6), Math.floor((shownIn + visL / S.zoom) * f));
+      const n1 = Math.min(Math.ceil(c.out * f - 1e-6) - 1, Math.ceil((shownIn + visR / S.zoom) * f));
+      for (let n = n0; n <= n1; n++) {
+        const t = n / f;
+        const x = (t - shownIn) * S.zoom;
+        html += `<img src="${pic(t)}" style="left:${x.toFixed(2)}px;width:${framePx.toFixed(2)}px" alt="" draggable="false">`;
+      }
+    } else {
+      const aspect = m.info.width && m.info.height ? m.info.width / m.info.height : 16 / 9;
+      const fw = Math.max(24, h * aspect);
+      const needExact = fw / S.zoom < 1 / m.thumbRate;
+      for (let k = Math.floor(visL / fw); k * fw < visR; k++) {
+        const t = Math.floor((shownIn + (k * fw) / S.zoom) * f + 1e-6) / f;
+        html += `<img src="${needExact ? pic(t) : base(t)}" style="left:${k * fw}px;width:${fw}px" alt="" draggable="false">`;
+      }
     }
     box.innerHTML = html;
+    if (want.length) requestFrames(m, want);
   }
 
-  const STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600];
+  // Exact frames for the zoomed-in strip, fetched in the background a screenful at a time.
+  function requestFrames(m, times) {
+    m.wanted = m.wanted || new Set();
+    times.forEach((t) => { if (!m.exact.has(Math.round(t * 1000))) m.wanted.add(t); });
+    clearTimeout(m.frameTimer);
+    m.frameTimer = setTimeout(async () => {
+      const batch = [...m.wanted].slice(0, 48);
+      m.wanted.clear();
+      if (!batch.length) return;
+      try {
+        const got = await qc.frames(m.path, batch);
+        Object.entries(got).forEach(([t, url]) => m.exact.set(Math.round(Number(t) * 1000), url));
+        renderTimeline(true);
+      } catch {}
+    }, 120);
+  }
+
+  const SEC_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600];
   function renderRuler() {
     const ruler = $('ruler');
     const scroll = $('tlScroll');
-    const major = STEPS.find((s) => s * S.zoom >= 90) || 3600;
-    const minorDiv = major >= 60 ? 6 : major === 15 || major === 30 ? 3 : major === 2 || major === 0.2 ? 4 : 5;
-    const minor = major / minorDiv;
+    const fpx = S.zoom / FPS; // pixels per frame
+    // Major step: whole frames when zoomed right in, seconds otherwise.
+    let major = null;
+    let frameLabels = false;
+    for (const n of [1, 2, 5, 10]) if (n * fpx >= 64 && n < FPS) { major = n / FPS; frameLabels = true; break; }
+    if (!major) major = SEC_STEPS.find((s) => s * S.zoom >= 90) || 3600;
+    let minor;
+    if (frameLabels || (major === 1 && fpx >= 7)) minor = 1 / FPS;
+    else minor = major / (major >= 60 ? 6 : major === 15 || major === 30 ? 3 : major === 2 ? 4 : 5);
     $('track').style.setProperty('--grid', `${major * S.zoom}px`);
+    $('atrack').style.setProperty('--grid', `${major * S.zoom}px`);
     const from = Math.max(0, (scroll.scrollLeft - PAD) / S.zoom - major);
     const to = (scroll.scrollLeft + scroll.clientWidth) / S.zoom + major;
     let html = '';
-    for (let k = Math.floor(from / minor); k * minor <= to; k++) {
-      const t = Math.round(k * minor * 1000) / 1000;
+    // Frame ticks sit on frame boundaries; second ticks on whole seconds.
+    const unit = minor === 1 / FPS ? 1 / FPS : minor;
+    for (let k = Math.floor(from / unit); k * unit <= to; k++) {
+      const t = minor === 1 / FPS ? k / FPS : Math.round(k * unit * 1e6) / 1e6;
       const x = PAD + t * S.zoom;
-      const isMajor = Math.abs(t / major - Math.round(t / major)) < 1e-6;
-      html += `<i class="tick${isMajor ? ' major' : ''}" style="left:${x}px"></i>`;
-      if (isMajor) html += `<span class="lbl" style="left:${x}px">${major < 1 ? fmtTC(t).replace(/^00:/, '') : fmtTC(t).replace(/\.\d+$/, '')}</span>`;
+      const isMajor = frameLabels ? k % Math.round(major * FPS) === 0 : Math.abs(t / major - Math.round(t / major)) < 1e-6 && Math.abs(t - Math.round(t)) < 1e-6;
+      html += `<i class="tick${isMajor ? ' major' : ''}" style="left:${x.toFixed(2)}px"></i>`;
+      if (isMajor) html += `<span class="lbl" style="left:${x.toFixed(2)}px">${fmtTC(t, frameLabels)}</span>`;
     }
     ruler.innerHTML = html;
+    // Keep the empty-lane hints in view however far the timeline is zoomed or scrolled.
+    ['trackEmpty', 'atrackEmpty'].forEach((id) => { const e = $(id); e.style.left = `${scroll.scrollLeft + PAD}px`; e.style.width = `${Math.max(0, scroll.clientWidth - PAD * 2)}px`; });
+    renderOverview();
   }
 
   let lastTC = '';
@@ -702,6 +797,8 @@
   function renderPlayhead() {
     applyFade();
     $('playhead').style.left = `${PAD + S.playhead * S.zoom}px`;
+    const ovPh = document.querySelector('#overview .ov-ph');
+    if (ovPh) ovPh.style.left = `${(S.playhead / Math.max(total(), 0.001)) * $('overview').clientWidth}px`;
     renderTC($('tcNow'), fmtTC(S.playhead), true);
     const tt = fmtTC(total());
     if (tt !== lastTC) { renderTC($('tcTotal'), tt, false); lastTC = tt; }
@@ -758,10 +855,13 @@
     .map(([n, l]) => `<option value="${n}"${Math.abs((v || 0) - n) < 0.001 ? ' selected' : ''}>${l}</option>`).join('');
 
   const info = (text) => `<span class="info" tabindex="0" role="note" aria-label="${esc(text)}" data-tip="${esc(text)}"><svg data-icon="info"></svg></span>`;
-  const zoomTools = `<div class="zoom">
-      <button class="icon-btn sm" data-z="out" aria-label="Zoom out" data-tip="Zoom out (−, or Ctrl + scroll)"><svg data-icon="minus"></svg></button>
-      <button class="icon-btn sm" data-z="in" aria-label="Zoom in" data-tip="Zoom in (+, or Ctrl + scroll)"><svg data-icon="plus"></svg></button>
-      <button class="btn btn-quiet btn-sm" data-z="fit" data-tip="Show the whole edit">Fit</button>
+  const zoomTools = () => `<div class="zoom">
+      <button class="icon-btn sm" data-z="out" aria-label="Zoom out" data-tip="Zoom out (−)"><svg data-icon="zoomOut"></svg></button>
+      <input type="range" id="zoomRange" min="0" max="1000" value="${zoomToRange(S.zoom)}" style="--fill:${zoomToRange(S.zoom) / 10}%" aria-label="Timeline zoom">
+      <button class="icon-btn sm" data-z="in" aria-label="Zoom in" data-tip="Zoom in (+). Zoom all the way to see single frames."><svg data-icon="zoomIn"></svg></button>
+      ${selectedClip() ? '<button class="btn btn-quiet btn-sm" data-z="sel" data-tip="Zoom to the selected clip (Z)">Clip</button>' : ''}
+      <button class="btn btn-quiet btn-sm" data-z="fit" data-tip="Show the whole edit (\\)">Fit</button>
+      ${info('Zoom with the slider, the mouse wheel over the ruler or the bar above it, or Ctrl + wheel anywhere. In the bar above the ruler, drag the bright window to move along the edit and pull its edges to zoom.')}
     </div>`;
 
   // One bar above the timeline: the selected clip's controls, or the edit's summary.
@@ -773,7 +873,7 @@
     if (!c) {
       box.innerHTML = `<span class="cb-meta" id="cbMeta">${summary()}</span>
         <span class="cb-hint">Click a clip to trim or adjust it</span>
-        <div class="cb-end">${splitBtn}${zoomTools}</div>`;
+        <div class="cb-end">${splitBtn}${zoomTools()}</div>`;
     } else {
       const m = media.get(c.mediaId);
       const i = m.info;
@@ -798,7 +898,7 @@
         <div class="cb-end">
           ${splitBtn}
           <button class="btn btn-quiet btn-sm" id="fRemove" data-tip="Take this clip out of the edit (Delete)"><svg data-icon="trash"></svg><span>Remove</span></button>
-          ${zoomTools}
+          ${zoomTools()}
         </div>`;
     }
     paintIcons(box);
@@ -813,7 +913,7 @@
         const ok = !Number.isNaN(v) && (which === 'in' ? v >= 0 && v <= c.out - MIN_LEN : v >= c.in + MIN_LEN && v <= i.duration + 0.001);
         if (!ok) { inp.classList.add('invalid'); toast(which === 'in' ? `Start must be between 00:00.00 and ${fmtTC(c.out - MIN_LEN)}.` : `End must be between ${fmtTC(c.in + MIN_LEN)} and ${fmtTC(i.duration)}.`, { error: true }); return; }
         commit();
-        c[which] = Math.min(v, i.duration);
+        c[which] = Math.min(isAudioClip(c) ? snapFrame(v) : snapSrc(v, media.get(c.mediaId)), i.duration);
         inp.blur();
         render();
         seekTo(isAudioClip(c) ? c.start : starts()[S.clips.indexOf(c)]);
@@ -848,45 +948,127 @@
   $('clipBar').addEventListener('click', (e) => {
     const z = e.target.closest('[data-z]');
     if (!z) return;
-    if (z.dataset.z === 'in') setZoom(S.zoom * 1.5);
-    else if (z.dataset.z === 'out') setZoom(S.zoom / 1.5);
+    if (z.dataset.z === 'in') setZoom(S.zoom * 1.6);
+    else if (z.dataset.z === 'out') setZoom(S.zoom / 1.6);
+    else if (z.dataset.z === 'sel') zoomToSelection();
     else fitZoom();
   });
+  $('clipBar').addEventListener('input', (e) => { if (e.target.id === 'zoomRange') setZoom(rangeToZoom(Number(e.target.value))); });
 
   /* ---------- zoom ---------- */
 
-  const ZMIN = 2;
-  const ZMAX = 500;
+  // Zoom runs from the whole edit on screen down to about 160 px per frame.
+  const zMin = () => Math.min(2, (($('tlScroll').clientWidth || 800) - PAD * 2) / Math.max(total(), 1));
+  const zMax = () => FPS * 160;
+  const zoomToRange = (z) => (Math.log(z / zMin()) / Math.log(zMax() / zMin())) * 1000;
+  const rangeToZoom = (v) => zMin() * Math.pow(zMax() / zMin(), v / 1000);
   function setZoom(z, anchorX) {
     const scroll = $('tlScroll');
     const ax = anchorX ?? PAD + S.playhead * S.zoom - scroll.scrollLeft;
     const tAt = (scroll.scrollLeft + ax - PAD) / S.zoom;
-    S.zoom = clamp(z, ZMIN, ZMAX);
+    S.zoom = clamp(z, zMin(), zMax());
     renderTimeline();
     scroll.scrollLeft = PAD + tAt * S.zoom - ax;
     renderRuler();
     renderPlayhead();
+    syncZoomUI();
+  }
+  // Show exactly the time range [a, b].
+  function zoomToRange2(a, b) {
+    const scroll = $('tlScroll');
+    S.zoom = clamp((scroll.clientWidth - PAD * 2) / Math.max(b - a, 1 / FPS), zMin(), zMax());
+    renderTimeline();
+    scroll.scrollLeft = PAD + a * S.zoom - PAD;
+    renderRuler();
+    renderPlayhead();
+    syncZoomUI();
   }
   function fitZoom() {
-    const w = $('tlScroll').clientWidth - PAD * 2 - 40;
-    const T = total() || 30;
-    S.zoom = clamp(w / T, ZMIN, ZMAX);
+    zoomToRange2(0, total() || 30);
     $('tlScroll').scrollLeft = 0;
-    renderTimeline();
-    renderPlayhead();
+    renderRuler();
   }
+  function zoomToSelection() {
+    const c = selectedClip();
+    if (!c) return;
+    const s = isAudioClip(c) ? c.start : starts()[S.clips.indexOf(c)];
+    const pad = len(c) * 0.04;
+    zoomToRange2(Math.max(0, s - pad), s + len(c) + pad);
+  }
+  function syncZoomUI() {
+    const r = document.getElementById('zoomRange');
+    if (r) { r.value = zoomToRange(S.zoom); r.style.setProperty('--fill', `${r.value / 10}%`); }
+    renderOverview();
+  }
+
+  // Overview bar (like Audition's): the whole edit in miniature with a window for what's on
+  // screen. Drag the window to move, pull its edges to zoom, click anywhere to jump there.
+  function renderOverview() {
+    const ov = $('overview');
+    const W = ov.clientWidth;
+    const T = Math.max(total(), 0.001);
+    const scroll = $('tlScroll');
+    const k = W / T;
+    const a0 = clamp((scroll.scrollLeft - PAD) / S.zoom, 0, T);
+    const a1 = clamp((scroll.scrollLeft + scroll.clientWidth - PAD) / S.zoom, 0, T);
+    const st = starts();
+    let html = '';
+    S.clips.forEach((c, i) => { html += `<i class="ov-v${c.id === S.selected ? ' sel' : ''}" style="left:${st[i] * k}px;width:${Math.max(1, len(c) * k - 1)}px"></i>`; });
+    S.audio.forEach((c) => { html += `<i class="ov-a${c.id === S.selected ? ' sel' : ''}" style="left:${c.start * k}px;width:${Math.max(1, len(c) * k - 1)}px"></i>`; });
+    html += `<b class="ov-ph" style="left:${S.playhead * k}px"></b>`;
+    html += `<div class="ov-win" style="left:${a0 * k}px;width:${Math.max(6, (a1 - a0) * k)}px"><span class="ov-h l"></span><span class="ov-h r"></span></div>`;
+    ov.innerHTML = html;
+  }
+  $('overview').addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || !hasContent()) return;
+    e.preventDefault();
+    const ov = $('overview');
+    const scroll = $('tlScroll');
+    const rect = ov.getBoundingClientRect();
+    const T = Math.max(total(), 0.001);
+    const tAtX = (x) => clamp(((x - rect.left) / rect.width) * T, 0, T);
+    const span = () => (scroll.clientWidth - PAD * 2) / S.zoom;
+    const a0 = (scroll.scrollLeft) / S.zoom;
+    const a1 = a0 + span();
+    const handle = e.target.classList.contains('ov-h') ? (e.target.classList.contains('l') ? 'l' : 'r') : null;
+    const inWin = e.target.closest('.ov-win');
+    const t0 = tAtX(e.clientX);
+    const grab = t0 - a0;
+    if (!handle && !inWin) scroll.scrollLeft = (t0 - span() / 2) * S.zoom; // jump there, then drag
+    const move = (ev) => {
+      const t = tAtX(ev.clientX);
+      if (handle === 'l') zoomToRange2(Math.min(t, a1 - 1 / FPS), a1);
+      else if (handle === 'r') zoomToRange2(a0, Math.max(t, a0 + 1 / FPS));
+      else scroll.scrollLeft = (t - (inWin ? grab : span() / 2)) * S.zoom;
+      renderRuler();
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    renderRuler();
+  });
+
+  // Mouse wheel: over the ruler or overview it zooms around the pointer (as in Audition);
+  // over the tracks it scrolls, and zooms with Ctrl or Alt held.
+  const wheelZoom = (e, el) => {
+    e.preventDefault();
+    const rect = $('tlScroll').getBoundingClientRect();
+    const ax = el === 'overview'
+      ? PAD + ((e.clientX - $('overview').getBoundingClientRect().left) / $('overview').clientWidth) * total() * S.zoom - $('tlScroll').scrollLeft
+      : e.clientX - rect.left;
+    setZoom(S.zoom * Math.pow(1.0022, -e.deltaY), ax);
+  };
+  $('overview').addEventListener('wheel', (e) => wheelZoom(e, 'overview'), { passive: false });
   $('tlScroll').addEventListener('wheel', (e) => {
-    if (e.ctrlKey) {
-      e.preventDefault();
-      const rect = $('tlScroll').getBoundingClientRect();
-      setZoom(S.zoom * Math.pow(1.0018, -e.deltaY), e.clientX - rect.left);
+    if (e.ctrlKey || e.altKey || e.target.closest('#ruler')) {
+      wheelZoom(e, 'tracks');
     } else if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
       e.preventDefault();
       $('tlScroll').scrollLeft += e.deltaY;
     }
   }, { passive: false });
-  $('tlScroll').addEventListener('scroll', () => renderRuler());
-  window.addEventListener('resize', () => renderTimeline(true));
+  $('tlScroll').addEventListener('scroll', () => { renderRuler(); renderTimeline(); });
+  window.addEventListener('resize', () => { renderTimeline(true); renderRuler(); });
 
   /* ---------- timeline pointer interactions ---------- */
 
@@ -949,20 +1131,21 @@
         const sEnd = snapTime(s + len(c), c) - len(c);
         const sStart = snapTime(s, c);
         s = sStart !== s ? sStart : sEnd !== s ? Math.max(0, sEnd) : s;
-        c.start = s;
-        showTip(ev, `Starts at ${fmtTC(s)}`);
+        c.start = snapFrame(s);
+        showTip(ev, `Starts at ${fmtTC(c.start)}`);
       } else if (mode === 'l') {
         // Trimming the front: the clip's end stays put, its start and in-point move together.
         let ni = clamp(o.in + dt, Math.max(0, o.in - o.start), o.out - MIN_LEN);
         const snapped = snapTime(o.start + (ni - o.in), c);
         ni = clamp(o.in + (snapped - o.start), Math.max(0, o.in - o.start), o.out - MIN_LEN);
+        ni = o.in + (snapFrame(o.start + (ni - o.in)) - o.start);
         c.in = ni;
         c.start = o.start + (ni - o.in);
         showTip(ev, `Start ${fmtTC(ni)}`);
       } else {
         let no = clamp(o.out + dt, o.in + MIN_LEN, m.info.duration);
         const snapped = snapTime(o.start + (no - o.in), c);
-        no = clamp(o.in + (snapped - o.start), o.in + MIN_LEN, m.info.duration);
+        no = clamp(o.in + (snapFrame(snapped) - o.start), o.in + MIN_LEN, m.info.duration);
         c.out = no;
         showTip(ev, `End ${fmtTC(no)} · ${fmtShort(no - o.in)}`);
       }
@@ -1015,6 +1198,7 @@
         let ni = clamp(o.in + dt, 0, o.out - MIN_LEN);
         ni = clamp(o.in + snapT(clipStart + (ni - o.in)) - clipStart, 0, o.out - MIN_LEN);
         if (Math.abs(ni) * S.zoom < SNAP_PX) ni = 0;
+        ni = snapSrc(ni, m);
         c.in = ni;
         c._dx = (ni - o.in) * S.zoom; // left edge follows the cursor; gap closes on release
         c.in = o.in;
@@ -1025,6 +1209,7 @@
         let no = clamp(o.out + dt, o.in + MIN_LEN, m.info.duration);
         no = clamp(o.in + snapT(clipStart + (no - o.in)) - clipStart, o.in + MIN_LEN, m.info.duration);
         if (Math.abs(m.info.duration - no) * S.zoom < SNAP_PX) no = m.info.duration;
+        no = Math.min(snapSrc(no, m), wholeFrames(m.info.duration, m));
         c.out = no;
         showTip(ev, `End ${fmtTC(no)} · ${fmtShort(no - o.in)}`);
         seekPreview(no - 0.001);
@@ -1171,12 +1356,39 @@
       case 'ArrowRight': e.preventDefault(); step(1, e.shiftKey); break;
       case 'Home': e.preventDefault(); pause(); seekTo(0); followPlayhead(); break;
       case 'End': e.preventDefault(); pause(); seekTo(total()); followPlayhead(); break;
-      case '+': case '=': setZoom(S.zoom * 1.5); break;
-      case '-': case '_': setZoom(S.zoom / 1.5); break;
+      case '+': case '=': setZoom(S.zoom * 1.6); break;
+      case '-': case '_': setZoom(S.zoom / 1.6); break;
+      case '\\': fitZoom(); break;
+      case 'z': case 'Z': zoomToSelection(); break;
       case 'Escape': S.selected = null; render(); break;
       default:
     }
   });
+
+  /* ---------- timeline height (drag the line above it) ---------- */
+
+  const setTlHeight = (h) => {
+    const v = clamp(h, 200, Math.round(window.innerHeight * 0.72));
+    app.style.setProperty('--tl-h', `${v}px`);
+    return v;
+  };
+  setTlHeight(store.get('qc.tlh', Math.max(300, Math.round(window.innerHeight * 0.4))));
+  $('splitter').addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    const y0 = e.clientY;
+    const h0 = $('splitter').nextElementSibling.getBoundingClientRect().height;
+    document.body.style.cursor = 'ns-resize';
+    const move = (ev) => { setTlHeight(h0 - (ev.clientY - y0)); renderTimeline(true); renderShape(); };
+    const up = (ev) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.style.cursor = '';
+      store.set('qc.tlh', setTlHeight(h0 - (ev.clientY - y0)));
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  });
+  $('splitter').addEventListener('dblclick', () => { store.set('qc.tlh', setTlHeight(Math.round(window.innerHeight * 0.4))); renderTimeline(true); });
 
   /* ---------- hover hints ---------- */
 
@@ -1482,6 +1694,9 @@
   qc.onOpenPaths((paths) => importPaths(paths));
 
   window.__qcImport = importPaths;
+  window.__qcSeek = seekTo;
+  window.__qcMediaThumbRate = (id) => media.get(id).thumbRate;
+  window.__qcMedia = (id) => media.get(id);
   window.__qcOpenJSON = loadProjectJSON;
   window.__qcSerialize = serialize;
   window.__qcState = S;
