@@ -21,6 +21,7 @@
         <button class="icon-btn" id="undoBtn" data-tip="Undo (Ctrl+Z)" aria-label="Undo" disabled><svg data-icon="undo"></svg></button>
         <button class="icon-btn" id="redoBtn" data-tip="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled><svg data-icon="redo"></svg></button>
         <span class="divider" aria-hidden="true"></span>
+        <button class="icon-btn" id="newBtn" data-tip="New edit: clear everything and start fresh (Ctrl+N). Your video files aren’t touched." aria-label="New edit"><svg data-icon="filePlus"></svg></button>
         <button class="icon-btn" id="openProjBtn" data-tip="Open a saved project (Ctrl+Shift+O)" aria-label="Open project"><svg data-icon="folder"></svg></button>
         <button class="icon-btn" id="saveProjBtn" data-tip="Save this edit as a project to finish later (Ctrl+S)" aria-label="Save project" disabled><svg data-icon="save"></svg></button>
         <button class="icon-btn" id="keysBtn" aria-label="Keyboard shortcuts" data-tip-html="keys"><svg data-icon="info"></svg></button>
@@ -81,7 +82,10 @@
         <div class="timeline-inner" id="tlInner">
           <div class="ruler" id="ruler"></div>
           <div class="track" id="track">
-            <div class="track-empty" id="trackEmpty">Your clips line up here</div>
+            <div class="track-empty" id="trackEmpty">Videos line up here</div>
+          </div>
+          <div class="track atrack" id="atrack">
+            <div class="track-empty" id="atrackEmpty">Drop music or sound here</div>
           </div>
           <div class="insert-mark" id="insertMark" hidden></div>
           <div class="playhead" id="playhead"><span class="playhead-cap"></span></div>
@@ -102,6 +106,7 @@
       <kbd>Del</kbd><span>Remove the clip</span>
       <kbd>← →</kbd><span>One frame (hold Shift: 1 second)</span>
       <kbd>Ctrl Z</kbd><span>Undo</span>
+      <kbd>Ctrl N</kbd><span>New edit</span>
       <kbd>Ctrl S</kbd><span>Save project</span>
       <kbd>Ctrl E</kbd><span>Export</span>
     </div>

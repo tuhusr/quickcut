@@ -62,6 +62,8 @@ function createWindow() {
 
 // Files handed to us by Windows (double-clicked .qcut, "Open with"), minus Electron's own args.
 const argFiles = (argv) => argv.slice(app.isPackaged ? 1 : 2).filter((a) => !a.startsWith('-') && fs.existsSync(a) && fs.statSync(a).isFile());
+// Scripted dev test runs get their own profile so they never collide with an installed copy.
+if (!app.isPackaged && process.env.QC_DEV_SCRIPT) app.setPath('userData', path.join(app.getPath('temp'), 'quickcut-dev'));
 if (!app.requestSingleInstanceLock()) app.quit();
 app.on('second-instance', (_e, argv) => {
   if (!win) return;
@@ -75,6 +77,7 @@ app.whenReady().then(() => {
   protocol.handle('qc-media', (req) => serveMedia(req));
   createWindow();
   setupUpdater();
+  engine.detectGpu(); // warm the cache so the first export doesn't wait
 });
 
 app.on('window-all-closed', () => { engine.cancelExport(); app.quit(); });
@@ -103,18 +106,38 @@ function serveMedia(req) {
   return new Response(stream, { status, headers });
 }
 
+/* ---------- Remembered folders ---------- */
+// "save": where the last export or project went (shared, so both land in the same place).
+// "media": where clips were last added from.
+const PREFS = () => path.join(app.getPath('userData'), 'prefs.json');
+let prefs = null;
+function pref(key, fallback) {
+  if (!prefs) { try { prefs = JSON.parse(fs.readFileSync(PREFS(), 'utf8')); } catch { prefs = {}; } }
+  const dir = prefs[key];
+  return dir && fs.existsSync(dir) ? dir : fallback;
+}
+function remember(key, file) {
+  if (!file) return;
+  pref(key);
+  prefs[key] = path.dirname(file);
+  try { fs.writeFileSync(PREFS(), JSON.stringify(prefs, null, 1)); } catch {}
+}
+
 /* ---------- IPC ---------- */
 
 ipcMain.handle('open-files', async () => {
   const r = await dialog.showOpenDialog(win, {
     title: 'Add clips',
+    defaultPath: pref('media', app.getPath('videos')),
     properties: ['openFile', 'multiSelections'],
     filters: [
       { name: 'Video and audio', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi', 'wmv', 'flv', 'mpg', 'mpeg', 'ts', 'mts', 'm2ts', '3gp', 'ogv', 'gif', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus'] },
       { name: 'All files', extensions: ['*'] },
     ],
   });
-  return r.canceled ? [] : r.filePaths;
+  if (r.canceled) return [];
+  remember('media', r.filePaths[0]);
+  return r.filePaths;
 });
 
 ipcMain.handle('probe', async (_e, file) => engine.probe(file));
@@ -131,10 +154,12 @@ ipcMain.handle('proxy', async (_e, file) => {
 ipcMain.handle('save-path', async (_e, suggested, ext) => {
   const r = await dialog.showSaveDialog(win, {
     title: 'Save edited video',
-    defaultPath: path.join(app.getPath('videos'), `${suggested}.${ext}`),
+    defaultPath: path.join(pref('save', app.getPath('videos')), `${suggested}.${ext}`),
     filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
   });
-  return r.canceled ? null : r.filePath;
+  if (r.canceled) return null;
+  remember('save', r.filePath);
+  return r.filePath;
 });
 
 ipcMain.handle('export', async (_e, segments, infos, settings, outPath) => {
@@ -150,18 +175,19 @@ ipcMain.handle('project-save', async (_e, json, current, saveAs) => {
   if (!file || saveAs) {
     const r = await dialog.showSaveDialog(win, {
       title: 'Save project',
-      defaultPath: current || path.join(app.getPath('documents'), `${JSON.parse(json).name || 'Untitled edit'}.qcut`),
+      defaultPath: current || path.join(pref('save', app.getPath('documents')), `${JSON.parse(json).name || 'Untitled edit'}.qcut`),
       filters: [{ name: 'Quickcut project', extensions: ['qcut'] }],
     });
     if (r.canceled) return null;
     file = r.filePath;
   }
   fs.writeFileSync(file, json);
+  remember('save', file);
   return file;
 });
 ipcMain.handle('project-open', async (_e, file) => {
   if (!file) {
-    const r = await dialog.showOpenDialog(win, { title: 'Open project', properties: ['openFile'], filters: [{ name: 'Quickcut project', extensions: ['qcut'] }] });
+    const r = await dialog.showOpenDialog(win, { title: 'Open project', defaultPath: pref('save', app.getPath('documents')), properties: ['openFile'], filters: [{ name: 'Quickcut project', extensions: ['qcut'] }] });
     if (r.canceled) return null;
     file = r.filePaths[0];
   }
@@ -171,6 +197,7 @@ ipcMain.handle('autosave-write', (_e, json) => { try { fs.writeFileSync(AUTOSAVE
 ipcMain.handle('autosave-read', () => { try { return fs.readFileSync(AUTOSAVE(), 'utf8'); } catch { return null; } });
 ipcMain.handle('file-exists', (_e, p) => fs.existsSync(p));
 
+ipcMain.handle('gpu-info', async () => { const g = await engine.detectGpu(); return { ...g, name: engine.gpuName(g.h264 || g.h265 || g.av1) }; });
 ipcMain.handle('reveal', (_e, file) => shell.showItemInFolder(file));
 ipcMain.handle('open-file', (_e, file) => shell.openPath(file));
 ipcMain.handle('app-version', () => app.getVersion());

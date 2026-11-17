@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('qc', {
   autosaveWrite: (json) => ipcRenderer.invoke('autosave-write', json),
   autosaveRead: () => ipcRenderer.invoke('autosave-read'),
   exists: (p) => ipcRenderer.invoke('file-exists', p),
+  gpuInfo: () => ipcRenderer.invoke('gpu-info'),
   reveal: (p) => ipcRenderer.invoke('reveal', p),
   openFile: (p) => ipcRenderer.invoke('open-file', p),
   version: () => ipcRenderer.invoke('app-version'),

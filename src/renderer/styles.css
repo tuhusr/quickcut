@@ -203,18 +203,22 @@ input[type='range']:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 .timeline { grid-area: tl; background: var(--panel); border-top: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .zoom { display: flex; align-items: center; gap: 4px; }
 .timeline-scroll { flex: 1; overflow-x: auto; overflow-y: hidden; position: relative; background: var(--track); }
-.timeline-inner { position: relative; height: 100%; min-width: 100%; padding: 0 24px; }
-.ruler { position: relative; height: 28px; border-bottom: 1px solid var(--line); cursor: text; }
+.timeline-inner { position: relative; height: 100%; min-width: 100%; }
+.ruler { position: relative; flex: none; height: 28px; border-bottom: 1px solid var(--line); cursor: text; }
 .ruler .tick { position: absolute; bottom: 0; width: 1px; background: var(--line-strong); height: 6px; }
 .ruler .tick.major { height: 12px; background: var(--ruler); }
 .ruler .lbl { position: absolute; top: 4px; transform: translateX(4px); font: 500 12px/1 var(--font-num); color: var(--ruler); letter-spacing: 0.03em; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.track { position: relative; height: calc(100% - 28px); min-height: 110px; }
+.timeline-inner { display: flex; flex-direction: column; }
+.track { position: relative; flex: 1.5 1 0; min-height: 84px; }
+.track.atrack { flex: 1 1 0; min-height: 64px; border-top: 1px solid var(--line); }
+.atrack .clip { top: 8px; bottom: 8px; }
+.atrack .track-empty { top: 8px; bottom: 8px; }
 .track-empty { position: absolute; left: 24px; right: 24px; top: 18px; bottom: 18px; display: grid; place-items: center; border: 1.5px dashed var(--line-strong); border-radius: var(--radius); color: var(--text-3); font-size: 13px; }
-.app[data-empty='false'] .track-empty { display: none; }
+
 
 /* Visible time grid: the timeline's structure, not decoration. */
 .track::before {
-  content: ''; position: absolute; inset: 0 -24px; pointer-events: none;
+  content: ''; position: absolute; inset: 0; pointer-events: none;
   background-image: repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px var(--grid, 100px));
   background-position: var(--grid-x, 24px) 0; opacity: .55;
 }
@@ -410,3 +414,8 @@ kbd {
 .more[open] summary::before { transform: rotate(45deg) translate(-2px, -1px); }
 .more summary:hover { color: var(--text); }
 .more-body { display: grid; gap: 14px; padding-top: 14px; }
+
+/* ---------- Audio track ---------- */
+.clip.aclip { background: #1a1210; border-color: #4a3530; }
+.clip.aclip .clip-wave { top: 4px; bottom: 20px; height: auto; opacity: .9; mix-blend-mode: normal; }
+.clip.aclip .clip-label { background: transparent; padding-top: 0; }

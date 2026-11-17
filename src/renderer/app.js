@@ -65,7 +65,8 @@
 
   const media = new Map(); // id → { id, path, name, info, thumbs, playPath, status, error, proxyP, addedAt }
   const S = {
-    clips: [],            // { id, mediaId, in, out, volume, muted }
+    clips: [],            // video track, back to back: { id, mediaId, in, out, volume, muted, fadeIn, fadeOut }
+    audio: [],            // audio track, placed freely: { id, mediaId, start, in, out, volume, muted, fadeIn, fadeOut }
     selected: null,
     playhead: 0,
     playing: false,
@@ -78,7 +79,7 @@
   let past = [];
   let future = [];
 
-  const snapshot = () => JSON.stringify({ clips: S.clips, selected: S.selected });
+  const snapshot = () => JSON.stringify({ clips: S.clips, audio: S.audio, selected: S.selected });
   function commit() {
     past.push(snapshot());
     if (past.length > 200) past.shift();
@@ -88,11 +89,12 @@
   function markDirty() {
     dirty = true;
     clearTimeout(markDirty.t);
-    markDirty.t = setTimeout(() => { if (S.clips.length) qc.autosaveWrite(serialize()); }, 800);
+    markDirty.t = setTimeout(() => { if (hasContent()) qc.autosaveWrite(serialize()); }, 800);
   }
   function restore(snap) {
     const o = JSON.parse(snap);
     S.clips = o.clips;
+    S.audio = o.audio || [];
     S.selected = o.selected;
     render();
     seekTo(S.playhead);
@@ -101,9 +103,13 @@
   function redo() { if (!future.length) return; past.push(snapshot()); restore(future.pop()); markDirty(); }
 
   const len = (c) => c.out - c.in;
-  const total = () => S.clips.reduce((t, c) => t + len(c), 0);
+  const vTotal = () => S.clips.reduce((t, c) => t + len(c), 0);              // end of the video track
+  const audioEnd = () => S.audio.reduce((t, c) => Math.max(t, c.start + len(c)), 0);
+  const total = () => Math.max(vTotal(), audioEnd());                       // length of the whole edit
+  const hasContent = () => S.clips.length > 0 || S.audio.length > 0;
   const starts = () => { let t = 0; return S.clips.map((c) => { const s = t; t += len(c); return s; }); };
-  const clipById = (id) => S.clips.find((c) => c.id === id);
+  const isAudioClip = (c) => S.audio.includes(c);
+  const clipById = (id) => S.clips.find((c) => c.id === id) || S.audio.find((c) => c.id === id);
   const selectedClip = () => clipById(S.selected);
   const fpsOf = (c) => (c && media.get(c.mediaId).info.fps) || 30;
 
@@ -121,7 +127,7 @@
   const PLAYABLE_V = ['h264', 'vp8', 'vp9', 'av1'];
   const PLAYABLE_A = ['aac', 'mp3', 'opus', 'vorbis', 'flac', 'pcm_s16le', 'pcm_s24le', 'pcm_f32le', 'alac'];
 
-  async function importPaths(paths) {
+  async function importPaths(paths, audioAt = null) {
     if (!paths || !paths.length) return;
     const proj = paths.find((p) => /\.qcut$/i.test(p));
     if (proj) { openProject(proj); return; }
@@ -130,8 +136,14 @@
     const added = (await Promise.all(jobs)).filter(Boolean);
     if (!added.length) return;
     commit();
-    const wasEmpty = !S.clips.length;
-    added.forEach((m) => S.clips.push({ id: uid(), mediaId: m.id, in: 0, out: m.info.duration, volume: 1, muted: false, fadeIn: 0, fadeOut: 0 }));
+    const wasEmpty = !hasContent();
+    let at = audioAt ?? audioEnd();
+    added.forEach((m) => {
+      const base = { id: uid(), mediaId: m.id, in: 0, out: m.info.duration, volume: 1, muted: false, fadeIn: 0, fadeOut: 0 };
+      // Video files go on the video track (their own sound stays with them); sound-only files go on the audio track.
+      if (m.info.hasVideo) S.clips.push(base);
+      else { S.audio.push({ ...base, start: at }); at += m.info.duration; }
+    });
     if (wasEmpty) { fitZoom(); S.selected = null; }
     render();
     if (wasEmpty) seekTo(0);
@@ -179,11 +191,12 @@
       shape: S.shape, fit: S.fit,
       media: used.map((m) => ({ id: m.id, path: m.path })),
       clips: S.clips.map(({ id, mediaId, in: i, out, volume, muted, fadeIn, fadeOut }) => ({ id, mediaId, in: i, out, volume, muted, fadeIn, fadeOut })),
+      audio: S.audio.map(({ id, mediaId, start, in: i, out, volume, muted, fadeIn, fadeOut }) => ({ id, mediaId, start, in: i, out, volume, muted, fadeIn, fadeOut })),
     }, null, 1);
   }
 
   async function saveProject(saveAs = false) {
-    if (!S.clips.length) return;
+    if (!hasContent()) return;
     const file = await qc.saveProject(serialize(), projectFile, saveAs);
     if (!file) return;
     projectFile = file;
@@ -195,22 +208,12 @@
     let o;
     try { o = JSON.parse(json); } catch { toast('That project file is damaged and can’t be opened.', { error: true }); return; }
     if (!o || o.app !== 'quickcut') { toast('That isn’t a Quickcut project.', { error: true }); return; }
-    pause();
-    media.clear();
-    clipEls.forEach((el) => el.remove());
-    clipEls.clear();
-    loadedPath = null;
-    video.removeAttribute('src');
-    video.load();
-    past = []; future = [];
-    S.clips = []; S.selected = null; S.playhead = 0;
-    $('editName').value = o.name || 'Untitled edit';
-    S.shape = o.shape || 'orig';
-    S.fit = o.fit || 'fit';
-    render();
+    resetWorkspace(o.name, o.shape, o.fit);
     const loaded = await Promise.all((o.media || []).map((m) => loadMedia(m.path, m.id, true)));
     const ok = new Set(loaded.filter(Boolean).map((m) => m.id));
-    S.clips = (o.clips || []).filter((c) => ok.has(c.mediaId)).map((c) => ({ fadeIn: 0, fadeOut: 0, volume: 1, muted: false, ...c }));
+    const norm = (c) => ({ fadeIn: 0, fadeOut: 0, volume: 1, muted: false, ...c });
+    S.clips = (o.clips || []).filter((c) => ok.has(c.mediaId)).map(norm);
+    S.audio = (o.audio || []).filter((c) => ok.has(c.mediaId)).map((c) => ({ start: 0, ...norm(c) }));
     const missing = (o.media || []).length - ok.size;
     projectFile = file || null;
     dirty = false;
@@ -220,8 +223,37 @@
     toast(missing ? `Opened. ${missing} file${missing > 1 ? 's are' : ' is'} missing, so ${missing > 1 ? 'their' : 'its'} clips were left out.` : `Opened ${o.name || 'project'}`, { error: !!missing, ms: 6000 });
   }
 
+  // Empties the editor. Media files on disk are never touched.
+  function resetWorkspace(name = 'Untitled edit', shape = 'orig', fit = 'fit') {
+    pause();
+    media.clear();
+    clipEls.forEach((el) => el.remove());
+    clipEls.clear();
+    audioEls.forEach((el) => { el.pause(); el.removeAttribute('src'); });
+    audioEls.clear();
+    loadedPath = null;
+    video.removeAttribute('src');
+    video.load();
+    past = []; future = [];
+    S.clips = []; S.audio = []; S.selected = null; S.playhead = 0;
+    $('editName').value = name;
+    S.shape = shape;
+    S.fit = fit;
+    projectFile = null;
+    dirty = false;
+    render();
+  }
+
+  function newEdit() {
+    if (!hasContent()) return;
+    if (dirty && !confirm('Start a new edit? Changes to this one that you haven’t saved as a project will be lost. Your video files are not affected.')) return;
+    resetWorkspace();
+    $('restoreBtn').hidden = true;
+    toast('New edit');
+  }
+
   async function openProject(file) {
-    if (dirty && S.clips.length && !confirm('Open another project? Unsaved changes to this edit will be lost.')) return;
+    if (dirty && hasContent() && !confirm('Open another project? Unsaved changes to this edit will be lost.')) return;
     const r = await qc.openProject(file);
     if (r) loadProjectJSON(r.json, r.file);
   }
@@ -235,6 +267,7 @@
       m.proxying = null;
       renderViewerNote();
       if (currentMediaId === m.id) { loadedPath = null; seekTo(S.playhead); }
+      S.audio.forEach((c) => { if (c.mediaId === m.id) { const el = audioEls.get(c.id); if (el) { el.src = qc.mediaUrl(out); el.dataset.src = out; } } });
       return out;
     }).catch(() => {
       m.proxying = null;
@@ -247,17 +280,6 @@
     media.forEach((m) => { if (m.path === file && m.proxying !== null && m.proxying !== undefined) m.proxying = p; });
     renderViewerNote();
   });
-
-  function addMediaToTimeline(id, index = S.clips.length) {
-    const m = media.get(id);
-    if (!m || m.status !== 'ready') return;
-    commit();
-    const c = { id: uid(), mediaId: id, in: 0, out: m.info.duration, volume: 1, muted: false, fadeIn: 0, fadeOut: 0 };
-    S.clips.splice(index, 0, c);
-    S.selected = c.id;
-    render();
-    seekTo(starts()[index]);
-  }
 
   /* ---------- playback ---------- */
 
@@ -298,31 +320,58 @@
     if (m.playPath === m.path) makeProxy(m);
   });
 
+  let clockBase = null; // set while the playhead is past the end of the video track
+  const inVideo = () => S.clips.length && S.playhead < vTotal() - 1e-6;
+
   function seekTo(t) {
     S.playhead = clamp(t, 0, total());
-    const loc = locate(S.playhead);
-    if (loc) loadAt(loc.i, loc.local, S.playing);
+    if (inVideo()) {
+      clockBase = null;
+      const loc = locate(S.playhead);
+      loadAt(loc.i, loc.local, S.playing);
+    } else {
+      if (!video.paused) video.pause();
+      if (S.playing) clockBase = performance.now() - S.playhead * 1000;
+      const loc = locate(S.playhead); // park the last frame (shown black past the end)
+      if (loc) loadAt(loc.i, loc.local, false);
+    }
+    syncAudio(true);
     renderPlayhead();
   }
 
   function play() {
-    if (!S.clips.length) return;
+    if (!hasContent()) return;
     if (S.playhead >= total() - 0.02) S.playhead = 0;
     S.playing = true;
-    const loc = locate(S.playhead);
-    loadAt(loc.i, loc.local, true);
+    if (inVideo()) {
+      clockBase = null;
+      const loc = locate(S.playhead);
+      loadAt(loc.i, loc.local, true);
+    } else clockBase = performance.now() - S.playhead * 1000;
+    syncAudio(true);
     renderPlayState();
     requestAnimationFrame(tick);
   }
   function pause() {
     S.playing = false;
     video.pause();
+    clockBase = null;
+    syncAudio(true);
     renderPlayState();
   }
   const togglePlay = () => (S.playing ? pause() : play());
 
   function tick() {
     if (!S.playing) return;
+    if (clockBase !== null) {
+      S.playhead = (performance.now() - clockBase) / 1000;
+      if (S.playhead >= total()) { S.playhead = total(); pause(); }
+      syncAudio();
+      renderPlayhead();
+      followPlayhead();
+      requestAnimationFrame(tick);
+      return;
+    }
     const c = S.clips[currentIdx];
     if (!c) { pause(); return; }
     const st = starts();
@@ -333,6 +382,11 @@
           const n = S.clips[currentIdx + 1];
           S.playhead = st[currentIdx + 1];
           loadAt(currentIdx + 1, n.in, true);
+        } else if (audioEnd() > vTotal()) {
+          // The video track is done but music carries on: keep time with the clock.
+          S.playhead = vTotal();
+          video.pause();
+          clockBase = performance.now() - S.playhead * 1000;
         } else {
           S.playhead = total();
           pause();
@@ -341,9 +395,33 @@
         S.playhead = st[currentIdx] + (vt - c.in);
       }
     }
+    syncAudio();
     renderPlayhead();
     followPlayhead();
     requestAnimationFrame(tick);
+  }
+
+  // One <audio> per audio-track clip, started, stopped and nudged to follow the playhead.
+  const audioEls = new Map();
+  function syncAudio(hard = false) {
+    S.audio.forEach((c) => {
+      const m = media.get(c.mediaId);
+      let el = audioEls.get(c.id);
+      if (!el) {
+        el = new Audio();
+        el.preload = 'auto';
+        audioEls.set(c.id, el);
+      }
+      if (el.dataset.src !== m.playPath) { el.src = qc.mediaUrl(m.playPath); el.dataset.src = m.playPath; }
+      const local = c.in + (S.playhead - c.start);
+      const on = S.playing && S.playhead >= c.start - 0.01 && local < c.out - 0.01;
+      if (!on) { if (!el.paused) el.pause(); return; }
+      el.muted = c.muted;
+      el.volume = clamp(c.volume * fadeLevel(c, local), 0, 1);
+      if (hard || el.paused || Math.abs(el.currentTime - local) > 0.25) el.currentTime = local;
+      if (el.paused) el.play().catch(() => {});
+    });
+    audioEls.forEach((el, id) => { if (!S.audio.some((c) => c.id === id)) { el.pause(); audioEls.delete(id); } });
   }
 
   function step(dir, big = false) {
@@ -355,7 +433,25 @@
 
   /* ---------- edits ---------- */
 
+  // The audio clip under the playhead, preferring the selected one.
+  function audioAtPlayhead() {
+    const hit = (c) => S.playhead > c.start + MIN_LEN && S.playhead < c.start + len(c) - MIN_LEN;
+    const sel = S.audio.find((c) => c.id === S.selected);
+    return sel && hit(sel) ? sel : null;
+  }
+
   function split() {
+    const ac = audioAtPlayhead();
+    if (ac) {
+      commit();
+      const cutAt = ac.in + (S.playhead - ac.start);
+      const b = { ...ac, id: uid(), in: cutAt, start: S.playhead };
+      ac.out = cutAt;
+      S.audio.splice(S.audio.indexOf(ac) + 1, 0, b);
+      S.selected = b.id;
+      render();
+      return;
+    }
     const loc = locate(S.playhead);
     if (!loc || loc.end) return;
     const c = S.clips[loc.i];
@@ -369,6 +465,15 @@
   }
 
   function removeSelected() {
+    const ai = S.audio.findIndex((c) => c.id === S.selected);
+    if (ai >= 0) {
+      commit();
+      S.audio.splice(ai, 1);
+      S.selected = null;
+      render();
+      seekTo(Math.min(S.playhead, total()));
+      return;
+    }
     const i = S.clips.findIndex((c) => c.id === S.selected);
     if (i < 0) return;
     commit();
@@ -380,6 +485,16 @@
   }
 
   function setInOut(which) {
+    const sel = selectedClip();
+    if (sel && isAudioClip(sel)) {
+      const local = sel.in + (S.playhead - sel.start);
+      if (local <= sel.in - 1e-6 || local >= sel.out + 1e-6) { toast('Put the playhead over the selected clip first.'); return; }
+      commit();
+      if (which === 'in' && sel.out - local >= MIN_LEN) { sel.start = S.playhead; sel.in = local; }
+      if (which === 'out' && local - sel.in >= MIN_LEN) sel.out = local;
+      render();
+      return;
+    }
     const c = selectedClip();
     const loc = locate(S.playhead);
     if (!c || !loc || S.clips[loc.i].id !== c.id) { toast('Put the playhead over the selected clip first.'); return; }
@@ -393,16 +508,18 @@
   /* ---------- render ---------- */
 
   function render() {
-    app.dataset.empty = S.clips.length || media.size ? 'false' : 'true';
+    app.dataset.empty = hasContent() || media.size ? 'false' : 'true';
     $('trackEmpty').hidden = S.clips.length > 0;
+    $('atrackEmpty').hidden = S.audio.length > 0;
     renderTimeline();
     renderClipBar();
     renderPlayhead();
     renderPlayState();
     $('undoBtn').disabled = !past.length;
     $('redoBtn').disabled = !future.length;
-    $('exportBtn').disabled = !S.clips.length;
-    $('saveProjBtn').disabled = !S.clips.length;
+    $('exportBtn').disabled = !hasContent();
+    $('saveProjBtn').disabled = !hasContent();
+    $('newBtn').disabled = !hasContent();
     renderShape();
   }
 
@@ -459,10 +576,46 @@
       el.querySelector('.clip-fade.in').style.width = `${Math.min(w, (c.fadeIn || 0) * S.zoom)}px`;
       el.querySelector('.clip-fade.out').style.width = `${Math.min(w, (c.fadeOut || 0) * S.zoom)}px`;
     });
+    S.audio.forEach((c) => {
+      seen.add(c.id);
+      let el = clipEls.get(c.id);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'clip aclip';
+        el.dataset.id = c.id;
+        el.innerHTML = '<div class="clip-wave"></div><div class="clip-fade in"></div><div class="clip-fade out"></div><div class="clip-label"><span class="nm"></span><span class="du"></span></div><div class="handle l" data-h="l" aria-hidden="true"></div><div class="handle r" data-h="r" aria-hidden="true"></div>';
+        $('atrack').appendChild(el);
+        clipEls.set(c.id, el);
+      }
+      const m = media.get(c.mediaId);
+      const w = Math.max(4, len(c) * S.zoom);
+      el.style.left = `${PAD + c.start * S.zoom}px`;
+      el.style.width = `${w}px`;
+      el.classList.toggle('selected', c.id === S.selected);
+      el.classList.toggle('narrow', w < 110);
+      el.querySelector('.nm').textContent = m.name.replace(/\.[^.]+$/, '');
+      el.querySelector('.du').textContent = fmtShort(len(c));
+      let mute = el.querySelector('.clip-muted');
+      if (c.muted && !mute) { el.insertAdjacentHTML('beforeend', '<span class="clip-muted" title="Muted"><svg data-icon="volumeOff"></svg></span>'); paintIcons(el); }
+      if (!c.muted && mute) mute.remove();
+      const wave = el.querySelector('.clip-wave');
+      if (m.wave) {
+        wave.style.backgroundImage = `url('${m.wave}')`;
+        wave.style.backgroundSize = `${m.info.duration * S.zoom}px 100%`;
+        wave.style.backgroundPosition = `${-(c.in * S.zoom)}px 0`;
+      }
+      el.querySelector('.clip-fade.in').style.width = `${Math.min(w, (c.fadeIn || 0) * S.zoom)}px`;
+      el.querySelector('.clip-fade.out').style.width = `${Math.min(w, (c.fadeOut || 0) * S.zoom)}px`;
+    });
     clipEls.forEach((el, id) => { if (!seen.has(id)) { el.remove(); clipEls.delete(id); } });
     renderRuler();
     const meta = document.getElementById('cbMeta');
-    if (meta) meta.textContent = `${S.clips.length} clip${S.clips.length > 1 ? 's' : ''} · ${fmtTC(T)}`;
+    if (meta) meta.textContent = summary();
+  }
+
+  function summary() {
+    const n = S.clips.length + S.audio.length;
+    return `${n} clip${n === 1 ? '' : 's'} · ${fmtTC(total())}`;
   }
 
   function drawFrames(el, c, m, w, force) {
@@ -537,6 +690,7 @@
     return clamp(k, 0, 1);
   }
   function applyFade() {
+    if (S.clips.length && S.playhead >= vTotal() - 1e-6 && total() > vTotal()) { video.style.opacity = 0; return; }
     const loc = locate(S.playhead);
     if (!loc) { video.style.opacity = 1; return; }
     const c = S.clips[loc.i];
@@ -617,7 +771,7 @@
     const c = selectedClip();
     const splitBtn = `<button class="btn btn-quiet btn-sm" id="fSplit" data-tip="Cut the clip in two at the playhead (S)"><svg data-icon="scissors"></svg><span>Split</span></button>`;
     if (!c) {
-      box.innerHTML = `<span class="cb-meta" id="cbMeta">${S.clips.length} clip${S.clips.length > 1 ? 's' : ''} · ${fmtTC(total())}</span>
+      box.innerHTML = `<span class="cb-meta" id="cbMeta">${summary()}</span>
         <span class="cb-hint">Click a clip to trim or adjust it</span>
         <div class="cb-end">${splitBtn}${zoomTools}</div>`;
     } else {
@@ -662,7 +816,7 @@
         c[which] = Math.min(v, i.duration);
         inp.blur();
         render();
-        seekTo(starts()[S.clips.indexOf(c)]);
+        seekTo(isAudioClip(c) ? c.start : starts()[S.clips.indexOf(c)]);
       };
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } if (e.key === 'Escape') { inp.value = fmtTC(c[which]); inp.blur(); } });
       inp.addEventListener('change', apply);
@@ -756,6 +910,77 @@
   }
   $('ruler').addEventListener('pointerdown', (e) => { e.preventDefault(); scrub(e); });
   document.querySelector('.playhead-cap').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); scrub(e); });
+
+  $('atrack').addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const clipEl = e.target.closest('.clip');
+    if (!clipEl) { S.selected = null; render(); scrub(e); return; }
+    e.preventDefault();
+    const c = clipById(clipEl.dataset.id);
+    startAudioDrag(e, c, e.target.dataset.h || 'move');
+  });
+
+  // Snap a time to the playhead, the start, and every clip edge on both tracks.
+  function snapTime(t, ignore) {
+    const targets = [0, S.playhead, ...starts(), vTotal()];
+    S.audio.forEach((c) => { if (c !== ignore) targets.push(c.start, c.start + len(c)); });
+    let best = t;
+    let bestD = SNAP_PX / S.zoom;
+    targets.forEach((x) => { const d = Math.abs(x - t); if (d < bestD) { bestD = d; best = x; } });
+    return best;
+  }
+
+  // Audio clips sit anywhere in time: drag the body to move, the edges to trim.
+  function startAudioDrag(e, c, mode) {
+    if (S.playing) pause();
+    const m = media.get(c.mediaId);
+    const before = snapshot();
+    const o = { start: c.start, in: c.in, out: c.out };
+    const x0 = e.clientX;
+    let moved = false;
+    if (S.selected !== c.id) { S.selected = c.id; render(); }
+    document.body.style.cursor = mode === 'move' ? 'grabbing' : 'ew-resize';
+    const move = (ev) => {
+      const dt = (ev.clientX - x0) / S.zoom;
+      if (!moved && Math.abs(ev.clientX - x0) < 4) return;
+      moved = true;
+      if (mode === 'move') {
+        let s = Math.max(0, o.start + dt);
+        const sEnd = snapTime(s + len(c), c) - len(c);
+        const sStart = snapTime(s, c);
+        s = sStart !== s ? sStart : sEnd !== s ? Math.max(0, sEnd) : s;
+        c.start = s;
+        showTip(ev, `Starts at ${fmtTC(s)}`);
+      } else if (mode === 'l') {
+        // Trimming the front: the clip's end stays put, its start and in-point move together.
+        let ni = clamp(o.in + dt, Math.max(0, o.in - o.start), o.out - MIN_LEN);
+        const snapped = snapTime(o.start + (ni - o.in), c);
+        ni = clamp(o.in + (snapped - o.start), Math.max(0, o.in - o.start), o.out - MIN_LEN);
+        c.in = ni;
+        c.start = o.start + (ni - o.in);
+        showTip(ev, `Start ${fmtTC(ni)}`);
+      } else {
+        let no = clamp(o.out + dt, o.in + MIN_LEN, m.info.duration);
+        const snapped = snapTime(o.start + (no - o.in), c);
+        no = clamp(o.in + (snapped - o.start), o.in + MIN_LEN, m.info.duration);
+        c.out = no;
+        showTip(ev, `End ${fmtTC(no)} · ${fmtShort(no - o.in)}`);
+      }
+      renderTimeline();
+      autoScroll(ev);
+    };
+    const up = (ev) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.style.cursor = '';
+      tip.hidden = true;
+      if (!moved) { seekTo(clamp((tlX(ev) - PAD) / S.zoom, 0, total())); return; }
+      if (c.start !== o.start || c.in !== o.in || c.out !== o.out) { past.push(before); future = []; markDirty(); }
+      render();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
 
   $('track').addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
@@ -851,7 +1076,7 @@
       target = S.clips.length;
       for (let i = 0; i < S.clips.length; i++) if (t < st[i] + len(S.clips[i]) / 2) { target = i; break; }
       const mark = $('insertMark');
-      const markT = target < S.clips.length ? st[target] : total();
+      const markT = target < S.clips.length ? st[target] : vTotal();
       const noop = target === fromIdx || target === fromIdx + 1;
       mark.hidden = noop;
       mark.style.left = `${PAD + markT * S.zoom}px`;
@@ -894,37 +1119,16 @@
   const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
   window.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; $('dropOverlay').hidden = false; });
   window.addEventListener('dragleave', (e) => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('dropOverlay').hidden = true; });
-  window.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    if ([...(e.dataTransfer?.types || [])].includes('text/qc-media')) {
-      e.dataTransfer.dropEffect = 'copy';
-      const overTrack = e.target.closest && e.target.closest('.timeline');
-      const mark = $('insertMark');
-      if (overTrack) {
-        const t = (tlX(e) - PAD) / S.zoom;
-        const st = starts();
-        let idx = S.clips.length;
-        for (let i = 0; i < S.clips.length; i++) if (t < st[i] + len(S.clips[i]) / 2) { idx = i; break; }
-        mark.hidden = false;
-        mark.style.left = `${PAD + (idx < S.clips.length ? st[idx] : total()) * S.zoom}px`;
-        mark.dataset.idx = idx;
-      } else mark.hidden = true;
-    }
-  });
+  window.addEventListener('dragover', (e) => e.preventDefault());
   window.addEventListener('drop', (e) => {
     e.preventDefault();
     dragDepth = 0;
     $('dropOverlay').hidden = true;
-    const mid = e.dataTransfer.getData('text/qc-media');
-    const mark = $('insertMark');
-    if (mid) {
-      const idx = mark.hidden ? null : Number(mark.dataset.idx);
-      mark.hidden = true;
-      if (idx !== null) addMediaToTimeline(mid, idx);
-      return;
-    }
     const paths = [...e.dataTransfer.files].map((f) => qc.pathFor(f)).filter(Boolean);
-    importPaths(paths);
+    // Sound dropped onto the audio lane lands where it was dropped.
+    const lane = $('atrack').getBoundingClientRect();
+    const onLane = e.clientY >= lane.top && e.clientY <= lane.bottom && e.clientX >= lane.left && e.clientX <= lane.right;
+    importPaths(paths, onLane ? Math.max(0, snapTime((tlX(e) - PAD) / S.zoom)) : null);
   });
 
   const choose = async () => importPaths(await qc.openFiles());
@@ -936,6 +1140,7 @@
   $('playBtn').addEventListener('click', togglePlay);
   $('prevFrameBtn').addEventListener('click', () => step(-1));
   $('nextFrameBtn').addEventListener('click', () => step(1));
+  $('newBtn').addEventListener('click', newEdit);
   $('openProjBtn').addEventListener('click', () => openProject());
   $('saveProjBtn').addEventListener('click', () => saveProject());
   $('editName').addEventListener('change', markDirty);
@@ -951,8 +1156,9 @@
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === 'z') { if (typing) return; e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if (mod && e.key.toLowerCase() === 'y') { if (typing) return; e.preventDefault(); redo(); return; }
-    if (mod && e.key.toLowerCase() === 'e') { e.preventDefault(); if (S.clips.length) openExport(); return; }
+    if (mod && e.key.toLowerCase() === 'e') { e.preventDefault(); if (hasContent()) openExport(); return; }
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); e.shiftKey ? openProject() : choose(); return; }
+    if (mod && e.key.toLowerCase() === 'n') { e.preventDefault(); newEdit(); return; }
     if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveProject(e.shiftKey); return; }
     if (typing || mod) return;
     switch (e.key) {
@@ -1030,18 +1236,23 @@
   let exportError = null;
   let exportStarted = 0;
 
+  const NO_VIDEO = { hasVideo: false, hasAudio: false, width: 0, height: 0, fps: 0 };
   const segments = () => S.clips.map((c) => ({ path: media.get(c.mediaId).path, in: c.in, out: c.out, volume: c.volume, muted: c.muted, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0 }));
-  const infos = () => { const o = {}; S.clips.forEach((c) => { const m = media.get(c.mediaId); o[m.path] = m.info; }); return o; };
+  const infos = () => { const o = {}; [...S.clips, ...S.audio].forEach((c) => { const m = media.get(c.mediaId); o[m.path] = m.info; }); return o; };
+  const audioTrack = () => S.audio.map((c) => ({ path: media.get(c.mediaId).path, start: c.start, in: c.in, out: c.out, volume: c.volume, muted: c.muted, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0 }));
+  const exportSettings = (extra = {}) => ({ ...X, shape: S.shape, fit: S.fit, audioTrack: audioTrack(), ...extra });
 
   async function normalize() {
     const f = FORMATS[X.format];
     if (f.video.length && !f.video.includes(X.vcodec)) X.vcodec = f.video[0];
     if (f.audio.length && !f.audio.includes(X.acodec)) X.acodec = f.audio[0];
-    X.copyAvailable = await qc.canSmartCut(segments(), infos(), { ...X, shape: S.shape, fit: S.fit, copy: true });
+    X.copyAvailable = await qc.canSmartCut(segments(), infos(), exportSettings({ copy: true }));
   }
 
   async function openExport() {
-    if (!S.clips.length) return;
+    if (!hasContent()) return;
+    // Only sound on the timeline: offer the audio formats.
+    if (!S.clips.length && FORMATS[X.format].video.length) X.format = 'mp3';
     pause();
     phase = 'settings';
     exportResult = null;
@@ -1054,12 +1265,12 @@
 
   function renderExport() {
     const d = $('exportDlg');
-    const first = media.get(S.clips[0].mediaId).info;
+    const first = S.clips[0] ? media.get(S.clips[0].mediaId).info : NO_VIDEO;
     const f = FORMATS[X.format];
     const isGif = X.format === 'gif';
     const hasV = f.video.length > 0;
     const hasA = f.audio.length > 0;
-    const anyAudio = S.clips.some((c) => media.get(c.mediaId).info.hasAudio);
+    const anyAudio = S.audio.length > 0 || S.clips.some((c) => media.get(c.mediaId).info.hasAudio);
 
     if (phase === 'progress') {
       const done = phase === 'progress' ? (exportProgress * 100) : 0;
@@ -1106,7 +1317,7 @@
       <div class="dlg-body">
         <div>
           <div class="group-label">Format ${info(f.note)}</div>
-          <div class="seg" id="xFmt">${Object.entries(FORMATS).map(([k, v]) => `<button type="button" data-v="${k}" aria-pressed="${k === X.format}">${v.label}</button>`).join('')}</div>
+          <div class="seg" id="xFmt">${Object.entries(FORMATS).map(([k, v]) => `<button type="button" data-v="${k}" aria-pressed="${k === X.format}"${v.video.length && !S.clips.length ? ' disabled data-tip="Add a video clip to save a video"' : ''}>${v.label}</button>`).join('')}</div>
         </div>
         ${X.copyAvailable ? `<label class="check"><input type="checkbox" id="xCopy" ${X.copy ? 'checked' : ''}><span>Keep original video quality</span>${info('Copies your footage untouched and only rebuilds the few frames around each cut. Exact cuts, faster, same picture. Turn it off to change the size, frame rate or file size.')}</label>` : ''}
         <div class="${smartOn && hasV ? 'disabled-block' : ''}">
@@ -1121,7 +1332,7 @@
               ${hasV && !isGif ? `<label class="field${locked}"><span>Video codec</span><select id="xV">${opt(f.video.map((v) => [v, VCODEC[v]]), X.vcodec)}</select></label>` : ''}
               ${hasV ? `<label class="field${locked}"><span>Resolution</span><select id="xRes">${isGif ? opt([[320, '320 px wide'], [480, '480 px wide'], [640, '640 px wide'], [800, '800 px wide'], [1080, '1080 px wide']], X.gifWidth) : opt(resOpts, X.resolution)}</select></label>` : ''}
               ${hasV ? `<label class="field${locked}"><span>Frame rate</span><select id="xFps">${isGif ? opt([[10, '10'], [15, '15'], [20, '20'], [25, '25']], X.gifFps) : opt(fpsOpts, X.fps)}</select></label>` : ''}
-              ${hasV && !isGif ? `<label class="field${locked}"><span>Encode speed</span><select id="xSpeed">${opt([['fast', 'Faster'], ['balanced', 'Balanced'], ['small', 'Smaller file (slower)']], X.speed)}</select></label>` : ''}
+              ${hasV && !isGif ? `<label class="field${locked}"><span>Speed ${info(speedHelp())}</span><select id="xSpeed">${opt([['fast', GPU && GPU[X.vcodec] ? `Fastest (${GPU.name} card)` : 'Fastest'], ['balanced', 'Balanced'], ['small', 'Smallest file (slow)']], X.speed)}</select></label>` : ''}
               ${hasA ? `<label class="field"><span>Audio</span><select id="xA" ${X.mute && hasV ? 'disabled' : ''}>${opt(f.audio.map((x) => [x, ACODEC[x]]), X.acodec)}</select></label>` : ''}
               ${hasA ? `<label class="field"><span>Audio quality</span><select id="xAb" ${losslessA || (X.mute && hasV) ? 'disabled' : ''}>${losslessA ? '<option>Lossless</option>' : opt([[320, '320 kbps'], [256, '256 kbps'], [192, '192 kbps'], [128, '128 kbps'], [96, '96 kbps'], [64, '64 kbps']], X.abitrate)}</select></label>` : ''}
             </div>
@@ -1169,6 +1380,14 @@
     estimate();
   }
 
+  // Graphics-card encoders found on this PC ({ h264, h265, av1, name }), filled in at startup.
+  let GPU = null;
+  qc.gpuInfo().then((g) => { GPU = g; }).catch(() => {});
+  function speedHelp() {
+    const card = GPU && GPU.name ? `your ${GPU.name} graphics card` : 'your graphics card when it has a video encoder';
+    return `Fastest uses ${card}: much quicker, slightly bigger file. Balanced is the best mix${GPU && (GPU.h265 || GPU.av1) ? ' (H.265 and AV1 still use the card)' : ''}. Smallest file squeezes harder and takes longer.`;
+  }
+
   let estTimer = null;
   function estimate() {
     clearTimeout(estTimer);
@@ -1176,7 +1395,7 @@
       const el = $('xEst');
       if (!el) return;
       const f = FORMATS[X.format];
-      const first = media.get(S.clips[0].mediaId).info;
+      const first = S.clips[0] ? media.get(S.clips[0].mediaId).info : NO_VIDEO;
       let dims = '';
       if (f.video.length && first.hasVideo) {
         let w = first.width; let h = first.height;
@@ -1188,7 +1407,7 @@
         dims = ` · ${Math.round(w / 2) * 2}×${Math.round(h / 2) * 2}`;
       }
       try {
-        const bytes = await qc.estimate(segments(), infos(), { ...X, shape: S.shape, fit: S.fit, copy: X.copy && X.copyAvailable });
+        const bytes = await qc.estimate(segments(), infos(), exportSettings({ copy: X.copy && X.copyAvailable }));
         el.innerHTML = `<b>≈ ${fmtBytes(bytes)}</b>${fmtTC(total())}${dims}`;
       } catch { el.textContent = `${fmtTC(total())}${dims}`; }
     }, 60);
@@ -1217,7 +1436,7 @@
       if (sub) sub.textContent = `Saving ${exportTarget.split(/[\\/]/).pop()} · ${fmtTC(p * total())} of ${fmtTC(total())}`;
     });
     try {
-      exportResult = await qc.exportVideo(segs, infos(), { ...X, shape: S.shape, fit: S.fit, copy: X.copy && X.copyAvailable }, out);
+      exportResult = await qc.exportVideo(segs, infos(), exportSettings({ copy: X.copy && X.copyAvailable }), out);
       phase = 'done';
     } catch (e) {
       const msg = String(e.message || e).replace(/^Error invoking remote method 'export': (Error: )?/, '');
@@ -1247,17 +1466,18 @@
   /* ---------- boot ---------- */
 
   qc.autosaveRead().then((json) => {
-    if (!json || S.clips.length) return;
+    if (!json || hasContent()) return;
     try {
       const o = JSON.parse(json);
-      if (!o.clips || !o.clips.length) return;
+      if (!(o.clips || []).length && !(o.audio || []).length) return;
       const b = $('restoreBtn');
       b.hidden = false;
-      b.querySelector('span').textContent = `Restore last edit (${o.clips.length} clip${o.clips.length > 1 ? 's' : ''})`;
+      const n = (o.clips || []).length + (o.audio || []).length;
+      b.querySelector('span').textContent = `Restore last edit (${n} clip${n > 1 ? 's' : ''})`;
       b.addEventListener('click', () => { b.hidden = true; loadProjectJSON(json, null); });
     } catch {}
   });
-  window.addEventListener('beforeunload', () => { if (S.clips.length) qc.autosaveWrite(serialize()); });
+  window.addEventListener('beforeunload', () => { if (hasContent()) qc.autosaveWrite(serialize()); });
 
   qc.onOpenPaths((paths) => importPaths(paths));
 
