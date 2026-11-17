@@ -342,8 +342,9 @@ function canSmartCut(segments, infos, settings) {
   const first = infos[segments[0].path];
   return canCopy(segments, infos) && SMART_CODECS.includes(first.vcodec) && !first.rotation &&
     ['mp4', 'mov', 'mkv'].includes(settings.format) &&
-    segments.every((s) => !(s.fadeIn > 0) && !(s.fadeOut > 0)) && (!settings.shape || settings.shape === 'orig') &&
-    trackEnd(settings.audioTrack) <= segments.reduce((t, x) => t + (x.out - x.in), 0) + 0.001;
+    segments.every((s) => !(s.fadeIn > 0) && !(s.fadeOut > 0) && !s.freeze && Math.abs((s.speed || 1) - 1) < 1e-3) &&
+    (!settings.shape || settings.shape === 'orig') &&
+    trackEnd(settings.audioTrack) <= sumDur(segments) + 0.001;
 }
 
 const ASPECTS = { '16:9': 16 / 9, '9:16': 9 / 16, '1:1': 1, '4:5': 4 / 5, '4:3': 4 / 3 };
@@ -369,7 +370,20 @@ function outputSize(settings, infos, segments) {
   return { w: even(w), h: even(h) };
 }
 
-const trackEnd = (track) => (track || []).reduce((t, c) => Math.max(t, c.start + (c.out - c.in)), 0);
+// How long a clip runs in the edit. Speed changes it; a freeze clip holds one frame for out - in.
+const segDur = (c) => (c.freeze ? c.out - c.in : (c.out - c.in) / (c.speed || 1));
+const sumDur = (list) => list.reduce((t, c) => t + segDur(c), 0);
+// Sound at another speed keeps its pitch: atempo, chained in steps it handles cleanly (0.5–2).
+function tempoChain(speed) {
+  let sp = speed || 1;
+  if (Math.abs(sp - 1) < 1e-3) return '';
+  const f = [];
+  while (sp > 2) { f.push(2); sp /= 2; }
+  while (sp < 0.5) { f.push(0.5); sp /= 0.5; }
+  f.push(sp);
+  return f.map((x) => `,atempo=${x.toFixed(6)}`).join('');
+}
+const trackEnd = (track) => (track || []).reduce((t, c) => Math.max(t, c.start + segDur(c)), 0);
 
 // Mixes the audio track (clips placed anywhere in time) over the video track's own sound.
 // `base` is the label of the video track's sound or null; inputs for the track start at `first`.
@@ -377,7 +391,7 @@ const trackEnd = (track) => (track || []).reduce((t, c) => Math.max(t, c.start +
 function mixAudioTrack(parts, base, track, infos, first, T) {
   const labels = base ? [base] : [];
   track.forEach((c, k) => {
-    const d = c.out - c.in;
+    const d = segDur(c);
     const ms = Math.round(c.start * 1000);
     const lbl = `t${k}`;
     parts.push(audioChain(`${first + k}:a:0`, c, infos[c.path], d, `${lbl}pre`));
@@ -401,9 +415,9 @@ function audioChain(label, s, info, d, out) {
   const fades = [];
   if (s.fadeIn > 0) fades.push(`afade=t=in:st=0:d=${Math.min(s.fadeIn, d).toFixed(3)}`);
   if (s.fadeOut > 0) fades.push(`afade=t=out:st=${Math.max(0, d - s.fadeOut).toFixed(3)}:d=${Math.min(s.fadeOut, d).toFixed(3)}`);
-  if (info.hasAudio && vol > 0) {
+  if (info.hasAudio && vol > 0 && !s.freeze) {
     const gain = Math.abs(vol - 1) > 0.001 ? `,volume=${vol.toFixed(3)}` : '';
-    return `[${label}]aresample=48000:async=1,aformat=sample_rates=48000:channel_layouts=stereo${gain},atrim=duration=${d.toFixed(3)},apad=whole_dur=${d.toFixed(3)},asetpts=PTS-STARTPTS${fades.length ? ',' + fades.join(',') : ''}[${out}]`;
+    return `[${label}]aresample=48000:async=1,aformat=sample_rates=48000:channel_layouts=stereo${tempoChain(s.speed)}${gain},atrim=duration=${d.toFixed(3)},apad=whole_dur=${d.toFixed(3)},asetpts=PTS-STARTPTS${fades.length ? ',' + fades.join(',') : ''}[${out}]`;
   }
   return `anullsrc=r=48000:cl=stereo,atrim=duration=${d.toFixed(3)}[${out}]`;
 }
@@ -412,7 +426,7 @@ function buildExport(segments, infos, settings, outPath) {
   const fmt = FORMATS[settings.format];
   if (!fmt) throw new Error(`Unknown format ${settings.format}`);
   const track = settings.audioTrack || [];
-  const vLen = segments.reduce((t, s) => t + (s.out - s.in), 0);
+  const vLen = sumDur(segments);
   const wantVideo = fmt.video.length > 0;
   const wantAudio = fmt.audio.length > 0 && !settings.mute;
   const audio = wantAudio && (segments.some((s) => infos[s.path].hasAudio) || track.length > 0);
@@ -429,7 +443,8 @@ function buildExport(segments, infos, settings, outPath) {
   // ffmpeg's exact seek returns the first frame at or after -ss; start 1 ms early so a cut placed
   // on a frame's own timestamp begins on that frame, not the next one.
   segments.forEach((s) => {
-    args.push('-ss', Math.max(0, s.in - 0.001).toFixed(6), '-t', (s.out - s.in).toFixed(6), '-i', s.path);
+    // a freeze frame only needs its one frame from the file
+    args.push('-ss', Math.max(0, s.in - 0.001).toFixed(6), '-t', (s.freeze ? 0.5 : s.out - s.in).toFixed(6), '-i', s.path);
   });
   if (audio) track.forEach((c) => args.push('-ss', c.in.toFixed(3), '-t', (c.out - c.in).toFixed(3), '-i', c.path));
 
@@ -437,7 +452,8 @@ function buildExport(segments, infos, settings, outPath) {
   const labels = [];
   segments.forEach((s, i) => {
     const info = infos[s.path];
-    const d = s.out - s.in;
+    const d = segDur(s);
+    const sp = s.speed || 1;
     if (wantVideo) {
       const fades = [];
       if (s.fadeIn > 0) fades.push(`fade=t=in:st=0:d=${Math.min(s.fadeIn, d).toFixed(3)}`);
@@ -445,8 +461,13 @@ function buildExport(segments, infos, settings, outPath) {
       const fit = fill
         ? `scale=${w}:${h}:force_original_aspect_ratio=increase:flags=lanczos,crop=${w}:${h}`
         : `scale=${w}:${h}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=black`;
-      if (info.hasVideo) {
-        parts.push(`[${i}:v:0]${fit},setsar=1,fps=${fps},format=yuv420p,trim=duration=${d.toFixed(3)},setpts=PTS-STARTPTS${fades.length ? ',' + fades.join(',') : ''}[v${i}]`);
+      const tail = `${fades.length ? ',' + fades.join(',') : ''}[v${i}]`;
+      if (info.hasVideo && s.freeze) {
+        // hold the first frame at the cut for the clip's length
+        parts.push(`[${i}:v:0]trim=end_frame=1,setpts=PTS-STARTPTS,${fit},setsar=1,fps=${fps},format=yuv420p,tpad=stop_mode=clone:stop_duration=${d.toFixed(3)},trim=duration=${d.toFixed(3)},setpts=PTS-STARTPTS${tail}`);
+      } else if (info.hasVideo) {
+        const retime = Math.abs(sp - 1) > 1e-3 ? `setpts=(PTS-STARTPTS)/${sp.toFixed(6)},` : '';
+        parts.push(`[${i}:v:0]${retime}${fit},setsar=1,fps=${fps},format=yuv420p,trim=duration=${d.toFixed(3)},setpts=PTS-STARTPTS${tail}`);
       } else {
         parts.push(`color=c=black:s=${w}x${h}:r=${fps}:d=${d.toFixed(3)},format=yuv420p[v${i}]`);
       }
@@ -668,7 +689,7 @@ function cancelExport() {
 
 // Rough size estimate (bytes) so the export dialog can say "about 48 MB".
 function estimateSize(segments, infos, settings) {
-  const total = Math.max(segments.reduce((t, s) => t + (s.out - s.in), 0), trackEnd(settings.audioTrack));
+  const total = Math.max(sumDur(segments), trackEnd(settings.audioTrack));
   const fmt = FORMATS[settings.format];
   if (settings.copy) {
     return segments.reduce((t, s) => { const i = infos[s.path]; return t + (i.bitrate / 8) * (s.out - s.in); }, 0);

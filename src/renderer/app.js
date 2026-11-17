@@ -120,7 +120,11 @@
   function undo() { if (!past.length) return; future.push(snapshot()); restore(past.pop()); markDirty(); }
   function redo() { if (!future.length) return; past.push(snapshot()); restore(future.pop()); markDirty(); }
 
-  const len = (c) => c.out - c.in;
+  // A clip's speed (1 = normal). A freeze clip holds the frame at `in` for out - in seconds.
+  const speedOf = (c) => (c.freeze ? 0 : c.speed || 1);
+  const len = (c) => (c.freeze ? c.out - c.in : (c.out - c.in) / (c.speed || 1));
+  const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+  const fmtSpeed = (s) => `${Number(s.toFixed(2))}×`;
   const vTotal = () => S.clips.reduce((t, c) => t + len(c), 0);              // end of the video track
   const audioEnd = () => S.audio.reduce((t, c) => Math.max(t, c.start + len(c)), 0);
   const total = () => Math.max(vTotal(), audioEnd());                       // length of the whole edit
@@ -133,7 +137,7 @@
   function locate(t) {
     const st = starts();
     for (let i = 0; i < S.clips.length; i++) {
-      if (t < st[i] + len(S.clips[i]) - 1e-6) return { i, local: S.clips[i].in + Math.max(0, t - st[i]), start: st[i] };
+      if (t < st[i] + len(S.clips[i]) - 1e-6) return { i, local: S.clips[i].in + Math.max(0, t - st[i]) * speedOf(S.clips[i]), start: st[i] };
     }
     const i = S.clips.length - 1;
     return i < 0 ? null : { i, local: S.clips[i].out, start: st[i], end: true };
@@ -209,8 +213,8 @@
       app: 'quickcut', version: 1, name: $('editName').value || 'Untitled edit',
       shape: S.shape, fit: S.fit,
       media: used.map((m) => ({ id: m.id, path: m.path })),
-      clips: S.clips.map(({ id, mediaId, in: i, out, volume, muted, fadeIn, fadeOut }) => ({ id, mediaId, in: i, out, volume, muted, fadeIn, fadeOut })),
-      audio: S.audio.map(({ id, mediaId, start, in: i, out, volume, muted, fadeIn, fadeOut }) => ({ id, mediaId, start, in: i, out, volume, muted, fadeIn, fadeOut })),
+      clips: S.clips.map(({ id, mediaId, in: i, out, volume, muted, fadeIn, fadeOut, speed, freeze }) => ({ id, mediaId, in: i, out, volume, muted, fadeIn, fadeOut, speed: speed || 1, freeze: !!freeze })),
+      audio: S.audio.map(({ id, mediaId, start, in: i, out, volume, muted, fadeIn, fadeOut, speed }) => ({ id, mediaId, start, in: i, out, volume, muted, fadeIn, fadeOut, speed: speed || 1 })),
     }, null, 1);
   }
 
@@ -329,6 +333,11 @@
     const m = media.get(c.mediaId);
     currentIdx = idx;
     currentMediaId = m.id;
+    // A freeze frame never plays: the picture holds while the clock runs (see tick).
+    if (c.freeze) { play = false; local = c.in; if (!video.paused) video.pause(); }
+    video.defaultPlaybackRate = c.freeze ? 1 : c.speed || 1;
+    video.playbackRate = c.freeze ? 1 : c.speed || 1;
+    video.preservesPitch = true;
     video.volume = clamp(c.volume, 0, 1);
     video.muted = c.muted;
     const waitingProxy = m.proxying !== null && m.proxying !== undefined && m.playPath === m.path;
@@ -348,6 +357,8 @@
 
   video.addEventListener('loadedmetadata', () => {
     if (pendingSeek !== null) { video.currentTime = pendingSeek; pendingSeek = null; }
+    const cur = S.clips[currentIdx];
+    video.playbackRate = cur && !cur.freeze ? cur.speed || 1 : 1;
     if (wantPlay) { video.play().catch(() => {}); wantPlay = false; }
   });
   video.addEventListener('error', () => {
@@ -393,6 +404,7 @@
     S.playing = false;
     video.pause();
     clockBase = null;
+    freezeBase = null;
     // Stop on a whole frame, showing exactly that frame.
     if (was) { S.playhead = floorFrame(S.playhead); const loc = inVideo() && locate(S.playhead); if (loc) loadAt(loc.i, loc.local, false); }
     syncAudio(true);
@@ -414,30 +426,47 @@
     const c = S.clips[currentIdx];
     if (!c) { pause(); return; }
     const st = starts();
+    if (c.freeze) {
+      // Holding a frame: time comes from the clock, the picture stays put.
+      if (freezeBase === null) freezeBase = performance.now() - (S.playhead - st[currentIdx]) * 1000;
+      S.playhead = st[currentIdx] + (performance.now() - freezeBase) / 1000;
+      if (S.playhead >= st[currentIdx] + len(c) - 1e-3) { freezeBase = null; advanceFrom(currentIdx, st); }
+      syncAudio();
+      renderPlayhead();
+      followPlayhead();
+      requestAnimationFrame(tick);
+      return;
+    }
     const vt = loadedPath ? video.currentTime : null;
     if (vt !== null && !video.seeking && pendingSeek === null) {
-      if (vt >= c.out - 0.015 || video.ended) {
-        if (currentIdx + 1 < S.clips.length) {
-          const n = S.clips[currentIdx + 1];
-          S.playhead = st[currentIdx + 1];
-          loadAt(currentIdx + 1, n.in, true);
-        } else if (audioEnd() > vTotal()) {
-          // The video track is done but music carries on: keep time with the clock.
-          S.playhead = vTotal();
-          video.pause();
-          clockBase = performance.now() - S.playhead * 1000;
-        } else {
-          S.playhead = total();
-          pause();
-        }
+      if (vt >= c.out - 0.015 * speedOf(c) || video.ended) {
+        advanceFrom(currentIdx, st);
       } else if (vt >= c.in - 0.05) {
-        S.playhead = st[currentIdx] + (vt - c.in);
+        S.playhead = st[currentIdx] + (vt - c.in) / speedOf(c);
       }
     }
     syncAudio();
     renderPlayhead();
     followPlayhead();
     requestAnimationFrame(tick);
+  }
+
+  let freezeBase = null;
+  // The clip at `idx` has finished: move on to the next one, or to music-only time, or stop.
+  function advanceFrom(idx, st) {
+    if (idx + 1 < S.clips.length) {
+      const n = S.clips[idx + 1];
+      S.playhead = st[idx + 1];
+      freezeBase = null;
+      loadAt(idx + 1, n.in, true);
+    } else if (audioEnd() > vTotal()) {
+      S.playhead = vTotal();
+      video.pause();
+      clockBase = performance.now() - S.playhead * 1000;
+    } else {
+      S.playhead = total();
+      pause();
+    }
   }
 
   // One <audio> per audio-track clip, started, stopped and nudged to follow the playhead.
@@ -452,11 +481,15 @@
         audioEls.set(c.id, el);
       }
       if (el.dataset.src !== m.playPath) { el.src = qc.mediaUrl(m.playPath); el.dataset.src = m.playPath; }
-      const local = c.in + (S.playhead - c.start);
-      const on = S.playing && S.playhead >= c.start - 0.01 && local < c.out - 0.01;
+      const sp = c.speed || 1;
+      const off = S.playhead - c.start;
+      const local = c.in + off * sp;
+      const on = S.playing && off >= -0.01 && off < len(c) - 0.01;
       if (!on) { if (!el.paused) el.pause(); return; }
       el.muted = c.muted;
-      el.volume = clamp(c.volume * fadeLevel(c, local), 0, 1);
+      el.preservesPitch = true;
+      if (el.playbackRate !== sp) el.playbackRate = sp;
+      el.volume = clamp(c.volume * fadeLevel(c, off), 0, 1);
       if (hard || el.paused || Math.abs(el.currentTime - local) > 0.25) el.currentTime = local;
       if (el.paused) el.play().catch(() => {});
     });
@@ -482,7 +515,7 @@
     const ac = audioAtPlayhead();
     if (ac) {
       commit();
-      const cutAt = ac.in + (S.playhead - ac.start);
+      const cutAt = ac.in + (S.playhead - ac.start) * (ac.speed || 1);
       const b = { ...ac, id: uid(), in: cutAt, start: S.playhead };
       ac.out = cutAt;
       S.audio.splice(S.audio.indexOf(ac) + 1, 0, b);
@@ -493,10 +526,12 @@
     const loc = locate(S.playhead);
     if (!loc || loc.end) return;
     const c = S.clips[loc.i];
-    if (loc.local - c.in < MIN_LEN || c.out - loc.local < MIN_LEN) { toast('Move the playhead further inside the clip to split it.'); return; }
+    const off = S.playhead - loc.start;
+    if (off < MIN_LEN || len(c) - off < MIN_LEN) { toast('Move the playhead further inside the clip to split it.'); return; }
     commit();
-    const b = { ...c, id: uid(), in: loc.local };
-    c.out = loc.local;
+    let b;
+    if (c.freeze) { b = { ...c, id: uid(), out: c.in + (len(c) - off) }; c.out = c.in + off; }
+    else { b = { ...c, id: uid(), in: loc.local }; c.out = loc.local; }
     S.clips.splice(loc.i + 1, 0, b);
     S.selected = b.id;
     render();
@@ -524,8 +559,9 @@
 
   function setInOut(which) {
     const sel = selectedClip();
+    if (sel && sel.freeze) { toast('A freeze frame holds one picture. Drag its right edge to change how long it holds.'); return; }
     if (sel && isAudioClip(sel)) {
-      const local = sel.in + (S.playhead - sel.start);
+      const local = sel.in + (S.playhead - sel.start) * (sel.speed || 1);
       if (local <= sel.in - 1e-6 || local >= sel.out + 1e-6) { toast('Put the playhead over the selected clip first.'); return; }
       commit();
       if (which === 'in' && sel.out - local >= MIN_LEN) { sel.start = S.playhead; sel.in = local; }
@@ -541,6 +577,55 @@
     if (which === 'out' && loc.local - c.in >= MIN_LEN) c.out = loc.local;
     render();
     seekTo(starts()[S.clips.indexOf(c)] + (which === 'in' ? 0 : len(c) - 0.001));
+  }
+
+  // Freeze frame: split the clip under the playhead and hold that exact frame for `dur` seconds.
+  function freezeFrame(dur = 2) {
+    const loc = S.clips.length && S.playhead < vTotal() ? locate(S.playhead) : null;
+    if (!loc) { toast('Put the playhead over a video clip first.'); return; }
+    const c = S.clips[loc.i];
+    const m = media.get(c.mediaId);
+    if (!m.info.hasVideo) { toast('Freeze frame needs a clip with a picture.'); return; }
+    commit();
+    const at = c.freeze ? c.in : Math.min(snapSrc(loc.local, m), c.out - 1 / srcFps(m));
+    const f = { id: uid(), mediaId: c.mediaId, in: at, out: at + dur, freeze: true, speed: 1, volume: 1, muted: false, fadeIn: 0, fadeOut: 0 };
+    const off = S.playhead - loc.start;
+    let idx;
+    if (c.freeze || len(c) - off < MIN_LEN) idx = loc.i + 1;
+    else if (off < MIN_LEN) idx = loc.i;
+    else {
+      const b = { ...c, id: uid(), in: at };
+      c.out = at;
+      S.clips.splice(loc.i + 1, 0, b);
+      idx = loc.i + 1;
+    }
+    S.clips.splice(idx, 0, f);
+    S.selected = f.id;
+    render();
+    seekTo(starts()[idx]);
+    toast(`Freeze frame added: holds ${dur} s`);
+  }
+
+  function setSpeed(c, v) {
+    if (!c || c.freeze) return;
+    commit();
+    c.speed = v;
+    const L = len(c);
+    if (c.fadeIn > L / 2) c.fadeIn = L / 2;
+    if (c.fadeOut > L / 2) c.fadeOut = L / 2;
+    render();
+    seekTo(isAudioClip(c) ? c.start : starts()[S.clips.indexOf(c)]);
+  }
+
+  function duplicateSelected() {
+    const c = selectedClip();
+    if (!c) return;
+    commit();
+    const d = { ...c, id: uid() };
+    if (isAudioClip(c)) { d.start = snapFrame(c.start + len(c)); S.audio.push(d); }
+    else S.clips.splice(S.clips.indexOf(c) + 1, 0, d);
+    S.selected = d.id;
+    render();
   }
 
   /* ---------- render ---------- */
@@ -598,8 +683,9 @@
       el.style.width = `${w}px`;
       el.classList.toggle('selected', c.id === S.selected);
       el.classList.toggle('narrow', w < 110);
-      el.querySelector('.nm').textContent = m.name.replace(/\.[^.]+$/, '');
-      el.querySelector('.du').textContent = fmtShort(len(c));
+      el.querySelector('.nm').textContent = (c.freeze ? 'Freeze frame · ' : '') + m.name.replace(/\.[^.]+$/, '');
+      el.querySelector('.du').textContent = labelDur(c);
+      el.classList.toggle('freeze', !!c.freeze);
       let mute = el.querySelector('.clip-muted');
       if (c.muted && !mute) { el.insertAdjacentHTML('beforeend', '<span class="clip-muted" title="Muted"><svg data-icon="volumeOff"></svg></span>'); paintIcons(el); }
       if (!c.muted && mute) mute.remove();
@@ -608,8 +694,9 @@
       const wave = el.querySelector('.clip-wave');
       if (m.wave) {
         wave.style.maskImage = `url('${m.wave}')`;
-        wave.style.maskSize = `${m.info.duration * S.zoom}px 100%`;
-        wave.style.maskPosition = `${-(c.in * S.zoom + (c._dx || 0))}px 0`;
+        const sp = speedOf(c) || 1;
+        wave.style.maskSize = `${(m.info.duration / sp) * S.zoom}px 100%`;
+        wave.style.maskPosition = `${-((c.in / sp) * S.zoom + (c._dx || 0))}px 0`;
       }
       el.querySelector('.clip-fade.in').style.width = `${Math.min(w, (c.fadeIn || 0) * S.zoom)}px`;
       el.querySelector('.clip-fade.out').style.width = `${Math.min(w, (c.fadeOut || 0) * S.zoom)}px`;
@@ -632,15 +719,16 @@
       el.classList.toggle('selected', c.id === S.selected);
       el.classList.toggle('narrow', w < 110);
       el.querySelector('.nm').textContent = m.name.replace(/\.[^.]+$/, '');
-      el.querySelector('.du').textContent = fmtShort(len(c));
+      el.querySelector('.du').textContent = labelDur(c);
       let mute = el.querySelector('.clip-muted');
       if (c.muted && !mute) { el.insertAdjacentHTML('beforeend', '<span class="clip-muted" title="Muted"><svg data-icon="volumeOff"></svg></span>'); paintIcons(el); }
       if (!c.muted && mute) mute.remove();
       const wave = el.querySelector('.clip-wave');
       if (m.wave) {
+        const sp = c.speed || 1;
         wave.style.maskImage = `url('${m.wave}')`;
-        wave.style.maskSize = `${m.info.duration * S.zoom}px 100%`;
-        wave.style.maskPosition = `${-(c.in * S.zoom)}px 0`;
+        wave.style.maskSize = `${(m.info.duration / sp) * S.zoom}px 100%`;
+        wave.style.maskPosition = `${-((c.in / sp) * S.zoom)}px 0`;
       }
       el.querySelector('.clip-fade.in').style.width = `${Math.min(w, (c.fadeIn || 0) * S.zoom)}px`;
       el.querySelector('.clip-fade.out').style.width = `${Math.min(w, (c.fadeOut || 0) * S.zoom)}px`;
@@ -650,6 +738,9 @@
     const meta = document.getElementById('cbMeta');
     if (meta) meta.textContent = summary();
   }
+
+  // "4.0s" — with the speed in front when it isn't 1×.
+  const labelDur = (c) => (!c.freeze && Math.abs((c.speed || 1) - 1) > 1e-3 ? `${fmtSpeed(c.speed)} · ` : '') + fmtShort(len(c));
 
   function summary() {
     const n = S.clips.length + S.audio.length;
@@ -671,13 +762,14 @@
     const x0 = parseFloat(el.style.left) || 0;
     const visL = Math.max(0, scroll.scrollLeft - x0 - 40);
     const visR = Math.min(w, scroll.scrollLeft + scroll.clientWidth - x0 + 40);
-    const key = `${c.in.toFixed(4)}|${c.out.toFixed(4)}|${S.zoom}|${w}|${h}|${m.thumbs.length}|${m.exact.size}|${c._dx || 0}|${Math.round(visL / 50)}|${Math.round(visR / 50)}`;
+    const key = `${c.in.toFixed(4)}|${c.out.toFixed(4)}|${speedOf(c)}|${S.zoom}|${w}|${h}|${m.thumbs.length}|${m.exact.size}|${c._dx || 0}|${Math.round(visL / 50)}|${Math.round(visR / 50)}`;
     if (!force && box.dataset.key === key) return;
     box.dataset.key = key;
     if (visR <= visL) { box.innerHTML = ''; return; }
     const f = srcFps(m);
-    const shownIn = c.in + (c._dx || 0) / S.zoom;
-    const framePx = S.zoom / f;
+    const sp = speedOf(c) || 1;
+    const shownIn = c.in + ((c._dx || 0) / S.zoom) * sp;
+    const framePx = S.zoom / f / sp;
     const base = (t) => m.thumbs[clamp(Math.round(t * m.thumbRate), 0, m.thumbs.length - 1)];
     const want = [];
     const pic = (t) => {
@@ -687,20 +779,25 @@
       return base(t);
     };
     let html = '';
-    if (framePx >= 18) {
-      const n0 = Math.max(Math.ceil(shownIn * f - 1e-6), Math.floor((shownIn + visL / S.zoom) * f));
-      const n1 = Math.min(Math.ceil(c.out * f - 1e-6) - 1, Math.ceil((shownIn + visR / S.zoom) * f));
+    if (c.freeze) {
+      const aspect = m.info.width && m.info.height ? m.info.width / m.info.height : 16 / 9;
+      const fw = Math.max(24, h * aspect);
+      const still = pic(Math.floor(c.in * f + 1e-6) / f);
+      for (let k = Math.floor(visL / fw); k * fw < visR; k++) html += `<img src="${still}" style="left:${k * fw}px;width:${fw}px" alt="" draggable="false">`;
+    } else if (framePx >= 18) {
+      const n0 = Math.max(Math.ceil(shownIn * f - 1e-6), Math.floor((shownIn + (visL / S.zoom) * sp) * f));
+      const n1 = Math.min(Math.ceil(c.out * f - 1e-6) - 1, Math.ceil((shownIn + (visR / S.zoom) * sp) * f));
       for (let n = n0; n <= n1; n++) {
         const t = n / f;
-        const x = (t - shownIn) * S.zoom;
+        const x = ((t - shownIn) / sp) * S.zoom;
         html += `<img src="${pic(t)}" style="left:${x.toFixed(2)}px;width:${framePx.toFixed(2)}px" alt="" draggable="false">`;
       }
     } else {
       const aspect = m.info.width && m.info.height ? m.info.width / m.info.height : 16 / 9;
       const fw = Math.max(24, h * aspect);
-      const needExact = fw / S.zoom < 1 / m.thumbRate;
+      const needExact = (fw / S.zoom) * sp < 1 / m.thumbRate;
       for (let k = Math.floor(visL / fw); k * fw < visR; k++) {
-        const t = Math.floor((shownIn + (k * fw) / S.zoom) * f + 1e-6) / f;
+        const t = Math.floor((shownIn + ((k * fw) / S.zoom) * sp) * f + 1e-6) / f;
         html += `<img src="${needExact ? pic(t) : base(t)}" style="left:${k * fw}px;width:${fw}px" alt="" draggable="false">`;
       }
     }
@@ -774,10 +871,11 @@
     });
   }
 
-  function fadeLevel(c, local) {
+  // How bright / loud a clip is `off` seconds into it, given its fades.
+  function fadeLevel(c, off) {
     let k = 1;
-    if (c.fadeIn > 0) k = Math.min(k, (local - c.in) / c.fadeIn);
-    if (c.fadeOut > 0) k = Math.min(k, (c.out - local) / c.fadeOut);
+    if (c.fadeIn > 0) k = Math.min(k, off / c.fadeIn);
+    if (c.fadeOut > 0) k = Math.min(k, (len(c) - off) / c.fadeOut);
     return clamp(k, 0, 1);
   }
   function applyFade() {
@@ -785,7 +883,7 @@
     const loc = locate(S.playhead);
     if (!loc) { video.style.opacity = 1; return; }
     const c = S.clips[loc.i];
-    const k = fadeLevel(c, loc.local);
+    const k = fadeLevel(c, S.playhead - loc.start);
     video.style.opacity = k;
     if (S.clips[currentIdx] === c) video.volume = clamp(c.volume * k, 0, 1);
   }
@@ -875,6 +973,34 @@
       const m = media.get(c.mediaId);
       const i = m.info;
       const vol = Math.round(c.volume * 100);
+      if (c.freeze) {
+        const holds = [0.5, 1, 2, 3, 4, 5, 10];
+        const cur = Math.round(len(c) * 1000) / 1000;
+        const opts = (holds.includes(cur) ? holds : [...holds, cur].sort((x, y) => x - y)).map((s) => `<option value="${s}"${s === cur ? ' selected' : ''}>${fmtShort(s)}</option>`).join('');
+        box.innerHTML = `
+          <div class="cb-name">Freeze frame</div>
+          <div class="cb-group">
+            <label class="cb-field"><span>Hold for</span><select id="fHold">${opts}</select></label>
+            ${info('Shows one frame, still, for this long. You can also drag the clip’s right edge.')}
+          </div>
+          <div class="cb-group">
+            <label class="cb-field"><span>Fade in</span><select id="fFadeIn">${fadeOpts(c.fadeIn)}</select></label>
+            <label class="cb-field"><span>out</span><select id="fFadeOut">${fadeOpts(c.fadeOut)}</select></label>
+          </div>
+          <div class="cb-end">
+            ${splitBtn}
+            <button class="btn btn-quiet btn-sm" id="fRemove" data-tip="Take this clip out of the edit (Delete)"><svg data-icon="trash"></svg><span>Remove</span></button>
+            ${zoomTools()}
+          </div>`;
+        paintIcons(box);
+        $('fSplit').addEventListener('click', split);
+        $('fRemove').addEventListener('click', removeSelected);
+        $('fHold').addEventListener('change', (e) => { commit(); c.out = c.in + Number(e.target.value); render(); });
+        ['fFadeIn', 'fFadeOut'].forEach((id) => $(id).addEventListener('change', (e) => { commit(); c[id === 'fFadeIn' ? 'fadeIn' : 'fadeOut'] = Math.min(Number(e.target.value), len(c) / 2); render(); }));
+        return;
+      }
+      const sp = c.speed || 1;
+      const spOpts = (SPEEDS.includes(sp) ? SPEEDS : [...SPEEDS, sp].sort((x, y) => x - y)).map((s) => `<option value="${s}"${s === sp ? ' selected' : ''}>${fmtSpeed(s)}</option>`).join('');
       box.innerHTML = `
         <div class="cb-name" title="${esc(m.path)}">${esc(m.name.replace(/\.[^.]+$/, ''))}</div>
         <div class="cb-group">
@@ -888,13 +1014,17 @@
           <output id="fVolOut">${i.hasAudio ? `${vol}%` : '—'}</output>
         </div>
         <div class="cb-group">
+          <label class="cb-field"><span>Speed</span><select id="fSpeed">${spOpts}</select></label>
+          ${info('Slow motion below 1×, fast motion above. The clip gets longer or shorter to match, and voices keep their normal pitch.')}
+        </div>
+        <div class="cb-group">
           <label class="cb-field"><span>Fade in</span><select id="fFadeIn">${fadeOpts(c.fadeIn)}</select></label>
           <label class="cb-field"><span>out</span><select id="fFadeOut">${fadeOpts(c.fadeOut)}</select></label>
           ${info('Fades the picture and sound in from black at the start, or out to black at the end.')}
         </div>
         <div class="cb-end">
-          ${splitBtn}
-          <button class="btn btn-quiet btn-sm" id="fRemove" data-tip="Take this clip out of the edit (Delete)"><svg data-icon="trash"></svg><span>Remove</span></button>
+          <button class="icon-btn sm" id="fSplit" aria-label="Split" data-tip="Split at the playhead (S)"><svg data-icon="scissors"></svg></button>
+          <button class="icon-btn sm" id="fRemove" aria-label="Remove" data-tip="Remove this clip (Delete)"><svg data-icon="trash"></svg></button>
           ${zoomTools()}
         </div>`;
     }
@@ -937,6 +1067,7 @@
       c[key] = Math.min(Number(e.target.value), len(c) / 2);
       render();
     });
+    $('fSpeed').addEventListener('change', (e) => setSpeed(c, Number(e.target.value)));
     bindFade('fFadeIn', 'fadeIn');
     bindFade('fFadeOut', 'fadeOut');
     $('fRemove').addEventListener('click', removeSelected);
@@ -1132,19 +1263,19 @@
         showTip(ev, `Starts at ${fmtTC(c.start)}`);
       } else if (mode === 'l') {
         // Trimming the front: the clip's end stays put, its start and in-point move together.
-        let ni = clamp(o.in + dt, Math.max(0, o.in - o.start), o.out - MIN_LEN);
-        const snapped = snapTime(o.start + (ni - o.in), c);
-        ni = clamp(o.in + (snapped - o.start), Math.max(0, o.in - o.start), o.out - MIN_LEN);
-        ni = o.in + (snapFrame(o.start + (ni - o.in)) - o.start);
-        c.in = ni;
-        c.start = o.start + (ni - o.in);
-        showTip(ev, `Start ${fmtTC(ni)}`);
+        const sp = c.speed || 1;
+        const oLen = (o.out - o.in) / sp;
+        const lo = Math.max(-o.start, -o.in / sp);
+        let off = clamp(snapFrame(snapTime(o.start + dt, c)) - o.start, lo, oLen - MIN_LEN);
+        c.start = o.start + off;
+        c.in = o.in + off * sp;
+        showTip(ev, `Start ${fmtTC(c.in)}`);
       } else {
-        let no = clamp(o.out + dt, o.in + MIN_LEN, m.info.duration);
-        const snapped = snapTime(o.start + (no - o.in), c);
-        no = clamp(o.in + (snapFrame(snapped) - o.start), o.in + MIN_LEN, m.info.duration);
-        c.out = no;
-        showTip(ev, `End ${fmtTC(no)} · ${fmtShort(no - o.in)}`);
+        const sp = c.speed || 1;
+        const oLen = (o.out - o.in) / sp;
+        const L = clamp(snapFrame(snapTime(o.start + oLen + dt, c)) - o.start, MIN_LEN, (m.info.duration - o.in) / sp);
+        c.out = o.in + L * sp;
+        showTip(ev, `End ${fmtTC(c.out)} · ${fmtShort(len(c))}`);
       }
       renderTimeline();
       autoScroll(ev);
@@ -1191,24 +1322,27 @@
         for (const t of targets) if (Math.abs(t - seqT) * S.zoom < SNAP_PX) return t;
         return seqT;
       };
-      if (side === 'l') {
-        let ni = clamp(o.in + dt, 0, o.out - MIN_LEN);
-        ni = clamp(o.in + snapT(clipStart + (ni - o.in)) - clipStart, 0, o.out - MIN_LEN);
-        if (Math.abs(ni) * S.zoom < SNAP_PX) ni = 0;
-        ni = snapSrc(ni, m);
-        c.in = ni;
-        c._dx = (ni - o.in) * S.zoom; // left edge follows the cursor; gap closes on release
-        c.in = o.in;
+      const sp = c.speed || 1;
+      const oLen = c.freeze ? o.out - o.in : (o.out - o.in) / sp;
+      if (c.freeze) {
+        // a freeze frame only changes how long it holds
+        const L = clamp(snapFrame(snapT(clipStart + oLen + dt) - clipStart), 1 / FPS, 600);
+        c.out = c.in + L;
+        showTip(ev, `Hold ${fmtShort(L)}`);
+      } else if (side === 'l') {
+        let off = clamp(snapT(clipStart + dt) - clipStart, -o.in / sp, oLen - MIN_LEN);
+        if (Math.abs(o.in + off * sp) * S.zoom / sp < SNAP_PX) off = -o.in / sp;
+        const ni = snapSrc(o.in + off * sp, m);
+        c._dx = ((ni - o.in) / sp) * S.zoom; // left edge follows the cursor; gap closes on release
         c._pendingIn = ni;
         showTip(ev, `Start ${fmtTC(ni)}`);
         seekPreview(ni);
       } else {
-        let no = clamp(o.out + dt, o.in + MIN_LEN, m.info.duration);
-        no = clamp(o.in + snapT(clipStart + (no - o.in)) - clipStart, o.in + MIN_LEN, m.info.duration);
-        if (Math.abs(m.info.duration - no) * S.zoom < SNAP_PX) no = m.info.duration;
-        no = Math.min(snapSrc(no, m), wholeFrames(m.info.duration, m));
+        let L = clamp(snapT(clipStart + oLen + dt) - clipStart, MIN_LEN, (m.info.duration - o.in) / sp);
+        if (Math.abs((m.info.duration - o.in) / sp - L) * S.zoom < SNAP_PX) L = (m.info.duration - o.in) / sp;
+        const no = Math.min(snapSrc(o.in + L * sp, m), wholeFrames(m.info.duration, m));
         c.out = no;
-        showTip(ev, `End ${fmtTC(no)} · ${fmtShort(no - o.in)}`);
+        showTip(ev, `End ${fmtTC(no)} · ${fmtShort(len(c))}`);
         seekPreview(no - 0.001);
       }
       renderTimeline();
@@ -1346,6 +1480,8 @@
     switch (e.key) {
       case ' ': e.preventDefault(); togglePlay(); break;
       case 's': case 'S': e.preventDefault(); split(); break;
+      case 'f': case 'F': e.preventDefault(); freezeFrame(); break;
+      case 'd': case 'D': e.preventDefault(); duplicateSelected(); break;
       case 'i': case 'I': setInOut('in'); break;
       case 'o': case 'O': setInOut('out'); break;
       case 'Delete': case 'Backspace': e.preventDefault(); removeSelected(); break;
@@ -1386,6 +1522,87 @@
     window.addEventListener('pointerup', up);
   });
   $('splitter').addEventListener('dblclick', () => { store.set('qc.tlh', setTlHeight(Math.round(window.innerHeight * 0.4))); renderTimeline(true); });
+
+  /* ---------- right-click menu on clips ---------- */
+
+  const ctx = document.createElement('div');
+  ctx.className = 'ctx';
+  ctx.setAttribute('role', 'menu');
+  ctx.hidden = true;
+  document.body.appendChild(ctx);
+  const closeCtx = () => { ctx.hidden = true; };
+
+  function openCtx(e, c) {
+    const m = media.get(c.mediaId);
+    const audio = isAudioClip(c);
+    const sp = c.speed || 1;
+    const item = (act, icon, label, key = '', extra = '') => `<button type="button" role="menuitem" data-act="${act}" ${extra}><svg data-icon="${icon}"></svg><span>${label}</span>${key ? `<kbd>${key}</kbd>` : ''}</button>`;
+    let html = '';
+    if (!c.freeze) {
+      html += `<div class="ctx-speed" role="group" aria-label="Speed"><span>Speed</span>${[0.25, 0.5, 1, 2, 4].map((s) => `<button type="button" data-speed="${s}" aria-pressed="${Math.abs(s - sp) < 1e-3}">${fmtSpeed(s)}</button>`).join('')}</div><hr>`;
+    }
+    if (!audio && m.info.hasVideo) html += item('freeze', 'snow', 'Freeze frame here', 'F');
+    html += item('split', 'scissors', 'Split here', 'S');
+    html += item('fadein', 'fadeIn', c.fadeIn > 0 ? 'Remove fade in' : 'Fade in (1 s)');
+    html += item('fadeout', 'fadeOut', c.fadeOut > 0 ? 'Remove fade out' : 'Fade out (1 s)');
+    if (!c.freeze && m.info.hasAudio) html += item('mute', c.muted ? 'volume' : 'volumeOff', c.muted ? 'Unmute' : 'Mute');
+    html += item('dup', 'copy', 'Duplicate', 'D');
+    html += item('zoom', 'zoomIn', 'Zoom to clip', 'Z');
+    html += `<hr>${item('remove', 'trash', 'Remove', 'Del', 'class="danger"')}`;
+    ctx.innerHTML = html;
+    paintIcons(ctx);
+    ctx.hidden = false;
+    const r = ctx.getBoundingClientRect();
+    ctx.style.left = `${clamp(e.clientX, 8, window.innerWidth - r.width - 8)}px`;
+    ctx.style.top = `${clamp(e.clientY, 8, window.innerHeight - r.height - 8)}px`;
+  }
+
+  ctx.addEventListener('click', (e) => {
+    const c = selectedClip();
+    const sb = e.target.closest('[data-speed]');
+    const b = e.target.closest('[data-act]');
+    if (!c || (!sb && !b)) return;
+    closeCtx();
+    if (sb) { setSpeed(c, Number(sb.dataset.speed)); return; }
+    const L = len(c);
+    switch (b.dataset.act) {
+      case 'freeze': freezeFrame(); break;
+      case 'split': split(); break;
+      case 'fadein': commit(); c.fadeIn = c.fadeIn > 0 ? 0 : Math.min(1, L / 2); render(); break;
+      case 'fadeout': commit(); c.fadeOut = c.fadeOut > 0 ? 0 : Math.min(1, L / 2); render(); break;
+      case 'mute': commit(); c.muted = !c.muted; render(); seekTo(S.playhead); break;
+      case 'dup': duplicateSelected(); break;
+      case 'zoom': zoomToSelection(); break;
+      case 'remove': removeSelected(); break;
+      default:
+    }
+  });
+  // Right-clicking a clip selects it and moves the playhead to that spot, so "here" means here.
+  ['track', 'atrack'].forEach((id) => $(id).addEventListener('contextmenu', (e) => {
+    const el = e.target.closest('.clip');
+    if (!el) return;
+    e.preventDefault();
+    if (S.playing) pause();
+    const c = clipById(el.dataset.id);
+    S.selected = c.id;
+    seekTo(clamp((tlX(e) - PAD) / S.zoom, 0, total()));
+    render();
+    openCtx(e, c);
+  }));
+  document.addEventListener('pointerdown', (e) => { if (!ctx.hidden && !ctx.contains(e.target)) closeCtx(); }, true);
+  window.addEventListener('keydown', (e) => {
+    if (ctx.hidden) return;
+    if (e.key === 'Escape') { e.stopPropagation(); closeCtx(); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault(); e.stopPropagation();
+      const items = [...ctx.querySelectorAll('[role=menuitem]')];
+      const i = items.indexOf(document.activeElement);
+      const next = i < 0 ? (e.key === 'ArrowDown' ? 0 : items.length - 1) : (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items[next].focus();
+    }
+  }, true);
+  window.addEventListener('blur', closeCtx);
+  $('tlScroll').addEventListener('scroll', closeCtx);
 
   /* ---------- hover hints ---------- */
 
@@ -1446,9 +1663,9 @@
   let exportStarted = 0;
 
   const NO_VIDEO = { hasVideo: false, hasAudio: false, width: 0, height: 0, fps: 0 };
-  const segments = () => S.clips.map((c) => ({ path: media.get(c.mediaId).path, in: c.in, out: c.out, volume: c.volume, muted: c.muted, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0 }));
+  const segments = () => S.clips.map((c) => ({ path: media.get(c.mediaId).path, in: c.in, out: c.out, speed: c.speed || 1, freeze: !!c.freeze, volume: c.volume, muted: c.muted, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0 }));
   const infos = () => { const o = {}; [...S.clips, ...S.audio].forEach((c) => { const m = media.get(c.mediaId); o[m.path] = m.info; }); return o; };
-  const audioTrack = () => S.audio.map((c) => ({ path: media.get(c.mediaId).path, start: c.start, in: c.in, out: c.out, volume: c.volume, muted: c.muted, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0 }));
+  const audioTrack = () => S.audio.map((c) => ({ path: media.get(c.mediaId).path, start: c.start, in: c.in, out: c.out, speed: c.speed || 1, volume: c.volume, muted: c.muted, fadeIn: c.fadeIn || 0, fadeOut: c.fadeOut || 0 }));
   const exportSettings = (extra = {}) => ({ ...X, shape: S.shape, fit: S.fit, audioTrack: audioTrack(), ...extra });
 
   async function normalize() {

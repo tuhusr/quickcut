@@ -461,6 +461,34 @@ dialog.export::backdrop { background: #000000a6; }
 .done-name { font-weight: 600; font-size: 14px; word-break: break-all; }
 .err-box { padding: 12px; border-radius: var(--radius); border: 1px solid var(--danger); color: var(--text); font-size: 12px; white-space: pre-wrap; font-family: var(--font-ui); max-height: 140px; overflow: auto; user-select: text; }
 
+/* ---------- Freeze-frame clips ---------- */
+.clip.freeze { --c: color-mix(in oklab, var(--vclip), var(--text) 28%); }
+.clip.freeze .handle.l, .clip.freeze .clip-wave { display: none; }
+
+/* ---------- Right-click menu ---------- */
+.ctx {
+  position: fixed; z-index: 85; min-width: 232px; padding: 6px; display: grid;
+  background: var(--panel); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--radius-viewer);
+}
+.ctx button[role='menuitem'] {
+  display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius);
+  background: transparent; color: var(--text); font-size: 13px; text-align: left;
+}
+.ctx button[role='menuitem'] svg { width: 16px; height: 16px; color: var(--text-2); }
+.ctx button[role='menuitem'] span { flex: 1; }
+.ctx button[role='menuitem'] kbd { font-size: 11.5px; padding: 2px 5px; color: var(--text-3); background: transparent; }
+.ctx button[role='menuitem']:hover, .ctx button[role='menuitem']:focus-visible { background: var(--panel-2); outline: none; }
+.ctx button.danger, .ctx button.danger svg { color: var(--danger); }
+.ctx hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
+.ctx-speed { display: flex; align-items: center; gap: 4px; padding: 4px 6px 2px 10px; }
+.ctx-speed span { flex: 1; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.ctx-speed button {
+  height: 26px; min-width: 38px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--panel-2); color: var(--text-2); font: 600 12px/1 var(--font-num); font-variant-numeric: tabular-nums;
+}
+.ctx-speed button:hover:not([aria-pressed='true']) { color: var(--text); background: var(--panel-3); }
+.ctx-speed button[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
 /* ---------- Settings panel ---------- */
 .icon-btn.on { background: var(--panel-2); color: var(--text); }
 .settings {
